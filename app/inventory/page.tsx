@@ -12,6 +12,7 @@ type InventoryItem = {
   id: string;
   sku: string;
   name: string;
+  category: string | null;
   cost_price: number;
   sale_price_incl_vat: number;
 };
@@ -19,6 +20,7 @@ type InventoryItem = {
 type CsvRow = {
   sku: string;
   name: string;
+  category: string;
   cost_price: number;
   sale_price_incl_vat: number;
 };
@@ -45,8 +47,12 @@ export default function InventoryPage() {
   const [costPrice, setCostPrice] = useState("");
   const [salePriceInclVat, setSalePriceInclVat] = useState("");
   const [csvText, setCsvText] = useState(
-    "sku,name,cost_price,sale_price_incl_vat\nFIT-001,Fitness Bench,100,150"
+    "sku,name,category,cost_price,sale_price_incl_vat\nFIT-001,Fitness Bench,Benches,100,150"
   );
+  const [category, setCategory] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [sortBy, setSortBy] = useState("name-asc");
 
   useEffect(() => {
     async function loadUser() {
@@ -99,6 +105,7 @@ export default function InventoryPage() {
     const { error } = await supabase.from("inventory_items").insert({
       sku,
       name: itemName,
+      category: category || null,
       cost_price: Number(costPrice || 0),
       sale_price_incl_vat: Number(salePriceInclVat || 0),
     });
@@ -115,6 +122,7 @@ export default function InventoryPage() {
 
   function startEditing(item: InventoryItem) {
     setEditingItemId(item.id);
+    setCategory(item.category || "");
     setSku(item.sku || "");
     setItemName(item.name || "");
     setCostPrice(String(item.cost_price ?? ""));
@@ -123,6 +131,7 @@ export default function InventoryPage() {
 
   function clearForm() {
     setEditingItemId(null);
+    setCategory("");
     setSku("");
     setItemName("");
     setCostPrice("");
@@ -136,9 +145,10 @@ export default function InventoryPage() {
 
     const { error } = await supabase
       .from("inventory_items")
-      .update({
+    .update({
         sku,
         name: itemName,
+        category: category || null,
         cost_price: Number(costPrice || 0),
         sale_price_incl_vat: Number(salePriceInclVat || 0),
       })
@@ -172,9 +182,10 @@ export default function InventoryPage() {
         row[header] = values[index] || "";
       });
 
-      return {
+     return {
         sku: row.sku || "",
         name: row.name || "",
+        category: row.category || "",
         cost_price: Number(row.cost_price || 0),
         sale_price_incl_vat: Number(row.sale_price_incl_vat || 0),
       };
@@ -207,26 +218,66 @@ export default function InventoryPage() {
 
   async function importCsv() {
     const rows = parseCsv(csvText).filter((row) => row.sku && row.name);
-
+  
     if (rows.length === 0) {
       setMessage("No valid CSV rows found.");
       return;
     }
-
+  
     setMessage("Importing inventory...");
-
-    const { error } = await supabase.from("inventory_items").insert(rows);
-
+  
+    const rowsToInsert = rows.map((row) => ({
+      sku: row.sku,
+      name: row.name,
+      category: row.category || null,
+      cost_price: row.cost_price,
+      sale_price_incl_vat: row.sale_price_incl_vat,
+    }));
+  
+    const { error } = await supabase.from("inventory_items").insert(rowsToInsert);
+  
     if (error) {
       setMessage(error.message);
       return;
     }
-
+  
     setMessage(`Imported ${rows.length} inventory item(s).`);
     loadInventory();
   }
 
   const inventoryCount = useMemo(() => inventory.length, [inventory]);
+  
+  const filteredInventory = useMemo(() => {
+    let items = [...inventory];
+  
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      items = items.filter(
+        (item) =>
+          item.sku.toLowerCase().includes(q) ||
+          item.name.toLowerCase().includes(q) ||
+          (item.category || "").toLowerCase().includes(q)
+      );
+    }
+  
+    if (categoryFilter !== "All") {
+      items = items.filter((item) => (item.category || "Other") === categoryFilter);
+    }
+  
+    if (sortBy === "name-asc") {
+      items.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortBy === "name-desc") {
+      items.sort((a, b) => b.name.localeCompare(a.name));
+    } else if (sortBy === "sku-asc") {
+      items.sort((a, b) => a.sku.localeCompare(b.sku));
+    } else if (sortBy === "price-low") {
+      items.sort((a, b) => a.sale_price_incl_vat - b.sale_price_incl_vat);
+    } else if (sortBy === "price-high") {
+      items.sort((a, b) => b.sale_price_incl_vat - a.sale_price_incl_vat);
+    }
+  
+    return items;
+  }, [inventory, searchTerm, categoryFilter, sortBy]);
 
   return (
     <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1180 }}>
@@ -299,6 +350,28 @@ export default function InventoryPage() {
                 />
               </div>
             </div>
+            
+            <div>
+              <label>Category</label>
+              <select
+                style={{ width: "100%", padding: 12, marginTop: 6 }}
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                <option value="">Select a category</option>
+                <option value="Treadmills">Treadmills</option>
+                <option value="Ellipticals">Ellipticals</option>
+                <option value="Indoor Cycling">Indoor Cycling</option>
+                <option value="Recumbent Bikes">Recumbent Bikes</option>
+                <option value="Rowers">Rowers</option>
+                <option value="Strength">Strength</option>
+                <option value="Accessories">Accessories</option>
+                <option value="Plates">Plates</option>
+                <option value="Bars">Bars</option>
+                <option value="Dumbbells">Dumbbells</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
@@ -351,8 +424,8 @@ export default function InventoryPage() {
 
         <section style={{ padding: 20, borderRadius: 16 }}>
           <h2 style={{ marginBottom: 12 }}>Import Inventory via CSV</h2>
-          <p style={{ marginTop: 0, color: "#4b5563" }}>
-            Use columns: <code>sku,name,cost_price,sale_price_incl_vat</code>
+      <p style={{ marginTop: 0, color: "#4b5563" }}>
+            Use columns: <code>sku,name,category,cost_price,sale_price_incl_vat</code>
           </p>
           <textarea
             style={{ width: "100%", minHeight: 220, padding: 12, marginTop: 4, fontFamily: "monospace" }}
@@ -384,8 +457,63 @@ export default function InventoryPage() {
             <p style={{ margin: 0, color: "#6b7280" }}>{inventoryCount} item(s)</p>
           </div>
         </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(220px, 1.2fr) minmax(220px, 1fr) minmax(220px, 1fr)",
+            gap: 14,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <label>Search</label>
+            <input
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              placeholder="Search by SKU, name, or category"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        
+          <div>
+            <label>Category</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="">Select a category</option>
+              <option value="Treadmills">Treadmills</option>
+              <option value="Ellipticals">Ellipticals</option>
+              <option value="Indoor Cycling">Indoor Cycling</option>
+              <option value="Recumbent Bikes">Recumbent Bikes</option>
+              <option value="Rowers">Rowers</option>
+              <option value="Strength">Strength</option>
+              <option value="Accessories">Accessories</option>
+              <option value="Plates">Plates</option>
+              <option value="Bars">Bars</option>
+              <option value="Dumbbells">Dumbbells</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        
+          <div>
+            <label>Sort</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <option value="name-asc">Name A-Z</option>
+              <option value="name-desc">Name Z-A</option>
+              <option value="sku-asc">SKU A-Z</option>
+              <option value="price-low">Price low to high</option>
+              <option value="price-high">Price high to low</option>
+            </select>
+          </div>
+        </div>
 
-        {inventory.length === 0 ? (
+        {filteredInventory.length === 0 ? (
           <div
             style={{
               border: "1px dashed #d1d5db",
@@ -401,8 +529,9 @@ export default function InventoryPage() {
             <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>SKU</th>
+ 				<th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>SKU</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Name</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Category</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Cost</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Sale incl. VAT</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Margin</th>
@@ -411,13 +540,14 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {inventory.map((item) => {
+                {filteredInventory.map((item) => {
                   const margin = Number(item.sale_price_incl_vat || 0) - Number(item.cost_price || 0);
 
                   return (
                     <tr key={item.id}>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, fontWeight: 700 }}>{item.sku}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{item.name}</td>
+                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{item.category || "-"}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{money(item.cost_price)}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{money(item.sale_price_incl_vat)}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, fontWeight: 700 }}>{money(margin)}</td>

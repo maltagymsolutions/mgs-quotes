@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { createClient } from "@/src/lib/supabase-browser";
 
@@ -48,19 +49,15 @@ export default function LoginPage() {
           boxShadow: "0 8px 24px rgba(17, 24, 39, 0.05)",
         }}
       >
-        <div
-          style={{
-            display: "inline-block",
-            padding: "7px 12px",
-            borderRadius: 999,
-            background: "#111827",
-            color: "#ffffff",
-            fontSize: 13,
-            fontWeight: 700,
-            marginBottom: 18,
-          }}
-        >
-          Malta Gym Solutions
+       <div style={{ marginBottom: 20 }}>
+          <Image
+            src="/mgs-logo.svg"
+            alt="Malta Gym Solutions"
+            width={240}
+            height={84}
+            priority
+            style={{ width: "240px", height: "auto", display: "block" }}
+          />
         </div>
 
         <h1 style={{ margin: "0 0 10px 0" }}>Sign in</h1>

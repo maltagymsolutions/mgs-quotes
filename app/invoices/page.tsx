@@ -412,6 +412,26 @@ export default function InvoicesPage() {
     const client = clients.find((c) => c.id === clientId);
     return client?.company_name || client?.private_name || "Unknown client";
   }
+  
+  async function archiveInvoice(invoiceId: string) {
+    const confirmed = window.confirm("Archive this invoice?");
+    if (!confirmed) return;
+  
+    setMessage("Archiving invoice...");
+  
+    const { error } = await supabase
+      .from("invoices")
+      .update({ status: "Archived" })
+      .eq("id", invoiceId);
+  
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+  
+    setMessage("Invoice archived.");
+    await loadInvoices();
+  }
 
   return (
     <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1100 }}>
@@ -654,6 +674,7 @@ export default function InvoicesPage() {
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Status</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>View</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Edit</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Archive</th>
               </tr>
             </thead>
             <tbody>
@@ -663,12 +684,47 @@ export default function InvoicesPage() {
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{getClientName(invoice.client_id)}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{invoice.date_issued}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{invoice.status}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    <Link href={`/invoices/${invoice.id}`}>View</Link>
+                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                    <Link
+                      href={`/invoices/${invoice.id}`}
+                      style={{
+                        display: "inline-block",
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        background: "#111827",
+                        color: "#ffffff",
+                        textDecoration: "none",
+                        fontWeight: 700,
+                      }}
+                    >
+                      View
+                    </Link>
                   </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    <button onClick={() => startEditingInvoice(invoice)} style={{ padding: "6px 10px" }}>
+                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                    <button
+                      onClick={() => startEditingInvoice(invoice)}
+                      style={{
+                        padding: "8px 12px",
+                        background: "#111827",
+                        color: "#ffffff",
+                        border: "1px solid #111827",
+                      }}
+                    >
                       Edit
+                    </button>
+                  </td>
+                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                    <button
+                      onClick={() => archiveInvoice(invoice.id)}
+                      disabled={invoice.status === "Archived"}
+                      style={{
+                        padding: "8px 12px",
+                        background: invoice.status === "Archived" ? "#9ca3af" : "#ffffff",
+                        color: invoice.status === "Archived" ? "#ffffff" : "#991b1b",
+                        border: invoice.status === "Archived" ? "1px solid #9ca3af" : "1px solid #fca5a5",
+                      }}
+                    >
+                      {invoice.status === "Archived" ? "Archived" : "Archive"}
                     </button>
                   </td>
                 </tr>

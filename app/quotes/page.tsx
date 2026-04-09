@@ -615,6 +615,26 @@ export default function QuotesPage() {
     await loadQuotes();
     await loadCompanySettings();
   }
+  
+  async function archiveQuote(quoteId: string) {
+    const confirmed = window.confirm("Archive this quote?");
+    if (!confirmed) return;
+  
+    setMessage("Archiving quote...");
+  
+    const { error } = await supabase
+      .from("quotes")
+      .update({ status: "Archived" })
+      .eq("id", quoteId);
+  
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+  
+    setMessage("Quote archived.");
+    await loadQuotes();
+  }
 
   function getClientName(clientId: string | null) {
     if (!clientId) return "";
@@ -830,11 +850,15 @@ export default function QuotesPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>SKU</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Name</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Qty</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Sale incl. VAT</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Action</th>
+                <thead>
+                   <tr>
+                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>SKU</th>
+                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Name</th>
+                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Qty</th>
+                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Sale incl. VAT</th>
+                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Action</th>
+                   </tr>
+                 </thead>
                 </tr>
               </thead>
               <tbody>
@@ -959,7 +983,8 @@ export default function QuotesPage() {
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Status</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>View</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Edit</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Action</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Convert</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Archive</th>
               </tr>
             </thead>
             <tbody>
@@ -969,21 +994,61 @@ export default function QuotesPage() {
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{getClientName(quote.client_id)}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{quote.date_issued}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{quote.status}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    <Link href={`/quotes/${quote.id}`}>View</Link>
+                 
+                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                    <Link
+                      href={`/quotes/${quote.id}`}
+                      style={{
+                        display: "inline-block",
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        background: "#111827",
+                        color: "#ffffff",
+                        textDecoration: "none",
+                        fontWeight: 700,
+                      }}
+                    >
+                      View
+                    </Link>
                   </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    <button onClick={() => startEditingQuote(quote)} style={{ padding: "6px 10px" }}>
+                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                    <button
+                      onClick={() => startEditingQuote(quote)}
+                      style={{
+                        padding: "8px 12px",
+                        background: "#111827",
+                        color: "#ffffff",
+                        border: "1px solid #111827",
+                      }}
+                    >
                       Edit
                     </button>
                   </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                     <button
                       onClick={() => convertQuoteToInvoice(quote)}
-                      disabled={quote.status === "Converted"}
-                      style={{ padding: "6px 10px" }}
+                      disabled={quote.status === "Converted" || quote.status === "Archived"}
+                      style={{ padding: "8px 12px" }}
                     >
-                      {quote.status === "Converted" ? "Already Converted" : "Convert to Invoice"}
+                      {quote.status === "Converted"
+                        ? "Already Converted"
+                        : quote.status === "Archived"
+                        ? "Archived"
+                        : "Convert to Invoice"}
+                    </button>
+                  </td>
+                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                    <button
+                      onClick={() => archiveQuote(quote.id)}
+                      disabled={quote.status === "Archived"}
+                      style={{
+                        padding: "8px 12px",
+                        background: quote.status === "Archived" ? "#9ca3af" : "#ffffff",
+                        color: quote.status === "Archived" ? "#ffffff" : "#991b1b",
+                        border: quote.status === "Archived" ? "1px solid #9ca3af" : "1px solid #fca5a5",
+                      }}
+                    >
+                      {quote.status === "Archived" ? "Archived" : "Archive"}
                     </button>
                   </td>
                 </tr>

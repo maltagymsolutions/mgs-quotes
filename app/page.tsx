@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const cards = [
@@ -32,7 +33,7 @@ export default function HomePage() {
     <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1180 }}>
       <section
         style={{
-          padding: 32,
+          padding: 36,
           borderRadius: 18,
           background: "#ffffff",
           border: "1px solid #e5e7eb",
@@ -40,35 +41,86 @@ export default function HomePage() {
           boxShadow: "0 8px 24px rgba(17, 24, 39, 0.05)",
         }}
       >
-        <div style={{ maxWidth: 760 }}>
-          <div
-            style={{
-              display: "inline-block",
-              padding: "7px 12px",
-              borderRadius: 999,
-              background: "#111827",
-              color: "#ffffff",
-              fontSize: 19,
-              fontWeight: 700,
-              letterSpacing: 0.3,
-              marginBottom: 18,
-            }}
-          >
-            Malta Gym Solutions
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "240px minmax(0, 1fr)",
+            gap: 40,
+            alignItems: "center",
+          }}
+        >
+          <div>
+            <Image
+              src="/mgs-logo.svg"
+              alt="Malta Gym Solutions"
+              width={150}
+              height={80}
+              priority
+              style={{ width: "150px", height: "auto", display: "block" }}
+            />
+      
+            <div
+              style={{
+                width: 56,
+                height: 3,
+                background: "#e10600",
+                marginTop: 22,
+                marginBottom: 18,
+                borderRadius: 999,
+              }}
+            />
+      
+            <p
+              style={{
+                margin: 0,
+                color: "#6b7280",
+                fontSize: 14,
+                lineHeight: 1.6,
+                maxWidth: 180,
+              }}
+            >
+              Internal workspace for quotes, invoices, clients, and inventory.
+            </p>
           </div>
-
-          <h1
-            style={{
-              margin: "0 0 14px 0",
-              fontSize: "2.4rem",
-              lineHeight: 1.02,
-              color: "#111827",
-              maxWidth: 700,
-            }}
-          >
-            Quote and Invoice Creator.
-          </h1>
-
+      
+          <div style={{ maxWidth: 720 }}>
+            <p
+              style={{
+                margin: "0 0 10px 0",
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "#6b7280",
+              }}
+            >
+              Admin Dashboard
+            </p>
+      
+            <h1
+              style={{
+                margin: "0 0 14px 0",
+                fontSize: "3.2rem",
+                lineHeight: 0.98,
+                color: "#111827",
+                letterSpacing: "-0.04em",
+              }}
+            >
+              Quote and Invoice Creator
+            </h1>
+      
+            <p
+              style={{
+                margin: 0,
+                color: "#4b5563",
+                lineHeight: 1.65,
+                fontSize: 17,
+                maxWidth: 560,
+              }}
+            >
+              Create quotes, manage inventory, and convert approved quotes into invoices.
+            </p>
+          </div>
         </div>
       </section>
 
