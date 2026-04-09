@@ -37,6 +37,7 @@ type SavedInvoice = {
   vat_rate: number;
   deposit_percent: number;
   shipping_cost_incl_vat: number | null;
+  discount_amount_incl_vat: number | null;
   notes: string | null;
 };
 
@@ -62,6 +63,15 @@ function round2(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function money(value: number) {
+  return new Intl.NumberFormat("en-MT", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
 function buildInvoiceNumber(prefix: string, nextNumber: number) {
   const year = String(new Date().getFullYear()).slice(-2);
   return `${prefix}-${year}-${nextNumber}`;
@@ -81,9 +91,13 @@ export default function InvoicesPage() {
   const [vatRate, setVatRate] = useState(18);
   const [depositPercent, setDepositPercent] = useState(50);
   const [shippingCostInclVat, setShippingCostInclVat] = useState(0);
+  const [discountAmountInclVat, setDiscountAmountInclVat] = useState(0);
   const [notes, setNotes] = useState("");
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemDraft[]>([]);
   const [selectedInventoryId, setSelectedInventoryId] = useState("");
+  const [inventorySearchTerm, setInventorySearchTerm] = useState("");
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState("All");
+  const [inventorySortBy, setInventorySortBy] = useState("name-asc");
 
   useEffect(() => {
     loadClients();
@@ -162,9 +176,13 @@ export default function InvoicesPage() {
     setVatRate(18);
     setDepositPercent(50);
     setShippingCostInclVat(0);
+    setDiscountAmountInclVat(0);
     setNotes("");
     setInvoiceItems([]);
     setSelectedInventoryId("");
+    setInventorySearchTerm("");
+    setInventoryCategoryFilter("All");
+    setInventorySortBy("name-asc");
   }
 
   async function startEditingInvoice(invoice: SavedInvoice) {
@@ -194,6 +212,7 @@ export default function InvoicesPage() {
     setVatRate(Number(invoice.vat_rate));
     setDepositPercent(Number(invoice.deposit_percent));
     setShippingCostInclVat(Number(invoice.shipping_cost_incl_vat || 0));
+    setDiscountAmountInclVat(Number(invoice.discount_amount_incl_vat || 0));
     setNotes(invoice.notes || "");
     setInvoiceItems(draftItems);
     setSelectedInventoryId("");
@@ -235,49 +254,110 @@ export default function InvoicesPage() {
   function removeItem(index: number) {
     setInvoiceItems((prev) => prev.filter((_, i) => i !== index));
   }
+  
 
-  const totals = useMemo(() => {
-    const grossTotal = round2(
+  
+  function moveItem(index: number, direction: "up" | "down") {
+    setInvoiceItems((prev) => {
+      const newItems = [...prev];
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+  
+      if (targetIndex < 0 || targetIndex >= newItems.length) {
+        return prev;
+      }
+  
+      const temp = newItems[index];
+      newItems[index] = newItems[targetIndex];
+      newItems[targetIndex] = temp;
+  
+      return newItems;
+    });
+  }
+
+ const totals = useMemo(() => {
+    const grossBeforeDiscount = round2(
       invoiceItems.reduce(
         (sum, item) => sum + Number(item.sale_price_incl_vat) * Number(item.qty),
         0
       )
     );
-
+  
+    const discountApplied = round2(
+      Math.min(Number(discountAmountInclVat || 0), grossBeforeDiscount)
+    );
+  
+    const grossTotal = round2(grossBeforeDiscount - discountApplied);
+  
     const salesVatAmount = round2(grossTotal - grossTotal / (1 + vatRate / 100));
-
+  
     const subtotal = isBusinessClient
       ? round2(grossTotal / (1 + vatRate / 100))
       : grossTotal;
-
+  
     const totalCost = round2(
       invoiceItems.reduce(
         (sum, item) => sum + Number(item.cost_price) * Number(item.qty),
         0
       )
     );
-
+  
     const shippingVatAmount = round2(
       Number(shippingCostInclVat || 0) -
         Number(shippingCostInclVat || 0) / (1 + vatRate / 100)
     );
-
+  
     const profit = round2(
-      grossTotal - salesVatAmount - shippingCostInclVat + shippingVatAmount - totalCost
+      grossTotal - salesVatAmount - Number(shippingCostInclVat || 0) + shippingVatAmount - totalCost
     );
-
+  
     const depositAmount = round2(grossTotal * (depositPercent / 100));
-
+  
     return {
       subtotal,
       vatAmount: salesVatAmount,
+      grossBeforeDiscount,
+      discountApplied,
       grossTotal,
       totalCost,
       shippingVatAmount,
       profit,
       depositAmount,
     };
-  }, [invoiceItems, vatRate, depositPercent, isBusinessClient, shippingCostInclVat]);
+  }, [invoiceItems, vatRate, depositPercent, isBusinessClient, shippingCostInclVat, discountAmountInclVat]);
+  
+  const filteredInventoryOptions = useMemo(() => {
+    let items = [...inventory];
+  
+    if (inventorySearchTerm.trim()) {
+      const q = inventorySearchTerm.toLowerCase();
+      items = items.filter(
+        (item) =>
+          item.sku.toLowerCase().includes(q) ||
+          item.name.toLowerCase().includes(q) ||
+          ((item as any).category || "").toLowerCase().includes(q)
+      );
+    }
+  
+    if (inventoryCategoryFilter !== "All") {
+      items = items.filter(
+        (item) => (((item as any).category || "Other") === inventoryCategoryFilter)
+      );
+    }
+  
+    if (inventorySortBy === "name-asc") {
+      items.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (inventorySortBy === "name-desc") {
+      items.sort((a, b) => b.name.localeCompare(a.name));
+    } else if (inventorySortBy === "sku-asc") {
+      items.sort((a, b) => a.sku.localeCompare(b.sku));
+    } else if (inventorySortBy === "price-low") {
+      items.sort((a, b) => a.sale_price_incl_vat - b.sale_price_incl_vat);
+    } else if (inventorySortBy === "price-high") {
+      items.sort((a, b) => b.sale_price_incl_vat - a.sale_price_incl_vat);
+    }
+  
+    return items;
+  }, [inventory, inventorySearchTerm, inventoryCategoryFilter, inventorySortBy]);
 
   async function saveInvoice() {
     if (!companySettings && !editingInvoiceId) {
@@ -305,6 +385,7 @@ export default function InvoicesPage() {
           vat_rate: vatRate,
           deposit_percent: depositPercent,
           shipping_cost_incl_vat: shippingCostInclVat,
+          discount_amount_incl_vat: discountAmountInclVat,
           notes: notes || null,
         })
         .eq("id", editingInvoiceId);
@@ -363,6 +444,7 @@ export default function InvoicesPage() {
         vat_rate: vatRate,
         deposit_percent: depositPercent,
         shipping_cost_incl_vat: shippingCostInclVat,
+        discount_amount_incl_vat: discountAmountInclVat,
         notes: notes || null,
         status: "Unpaid",
       })
@@ -501,7 +583,15 @@ export default function InvoicesPage() {
               onChange={(e) => setShippingCostInclVat(Number(e.target.value || 0))}
             />
           </div>
-
+          <div>
+            <label>Discount Amount incl. VAT</label>
+            <input
+              style={{ width: "100%", padding: 10, marginTop: 4 }}
+              type="number"
+              value={discountAmountInclVat}
+              onChange={(e) => setDiscountAmountInclVat(Number(e.target.value || 0))}
+            />
+          </div>
           <div>
             <label>Notes</label>
             <textarea
@@ -516,23 +606,79 @@ export default function InvoicesPage() {
       <section style={{ border: "1px solid #ccc", padding: 16, borderRadius: 8, marginTop: 24 }}>
         <h2>Add Items</h2>
 
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(220px, 1.2fr) minmax(220px, 1fr) minmax(220px, 1fr)",
+            gap: 14,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <label>Search</label>
+            <input
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              placeholder="Search by SKU, name, or category"
+              value={inventorySearchTerm}
+              onChange={(e) => setInventorySearchTerm(e.target.value)}
+            />
+          </div>
+        
+          <div>
+            <label>Category</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={inventoryCategoryFilter}
+              onChange={(e) => setInventoryCategoryFilter(e.target.value)}
+            >
+              <option value="All">All categories</option>
+              <option value="Treadmills">Treadmills</option>
+              <option value="Ellipticals">Ellipticals</option>
+              <option value="Indoor Cycling">Indoor Cycling</option>
+              <option value="Recumbent Bikes">Recumbent Bikes</option>
+              <option value="Rowers">Rowers</option>
+              <option value="Strength">Strength</option>
+              <option value="Accessories">Accessories</option>
+              <option value="Plates">Plates</option>
+              <option value="Bars">Bars</option>
+              <option value="Dumbbells">Dumbbells</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        
+          <div>
+            <label>Sort</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={inventorySortBy}
+              onChange={(e) => setInventorySortBy(e.target.value)}
+            >
+              <option value="name-asc">Name A-Z</option>
+              <option value="name-desc">Name Z-A</option>
+              <option value="sku-asc">SKU A-Z</option>
+              <option value="price-low">Price low to high</option>
+              <option value="price-high">Price high to low</option>
+            </select>
+          </div>
+        </div>
+        
         <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 300 }}>
             <label>Inventory Item</label>
             <select
-              style={{ width: "100%", padding: 10, marginTop: 4 }}
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
               value={selectedInventoryId}
               onChange={(e) => setSelectedInventoryId(e.target.value)}
             >
               <option value="">Select an item</option>
-              {inventory.map((item) => (
+              {filteredInventoryOptions.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.sku} - {item.name}
                 </option>
               ))}
             </select>
           </div>
-
+        
           <button onClick={addSelectedInventoryItem} style={{ padding: "10px 14px" }}>
             Add Item
           </button>
@@ -545,32 +691,71 @@ export default function InvoicesPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>SKU</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Name</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Qty</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Sale incl. VAT</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Action</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>SKU</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Name</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Qty</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Sale incl. VAT</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Order</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {invoiceItems.map((item, index) => (
-                  <tr key={`${item.inventory_item_id}-${index}`}>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.sku}</td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.name}</td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                      <input
-                        type="number"
-                        value={item.qty}
-                        onChange={(e) => updateQty(index, Number(e.target.value || 1))}
-                        style={{ width: 80, padding: 6 }}
-                      />
-                    </td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.sale_price_incl_vat}</td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                      <button onClick={() => removeItem(index)}>Remove</button>
-                    </td>
-                  </tr>
-                ))}
+               {invoiceItems.map((item, index) => (
+                 <tr key={`${item.inventory_item_id}-${index}`}>
+                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, fontWeight: 700 }}>{item.sku}</td>
+                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{item.name}</td>
+                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                     <input
+                       type="number"
+                       value={item.qty}
+                       onChange={(e) => updateQty(index, Number(e.target.value || 1))}
+                       style={{ width: 90, padding: 10 }}
+                     />
+                   </td>
+                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{money(item.sale_price_incl_vat)}</td>
+                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                       <button
+                         onClick={() => moveItem(index, "up")}
+                         disabled={index === 0}
+                         style={{
+                           padding: "8px 12px",
+                           background: index === 0 ? "#e5e7eb" : "#ffffff",
+                           color: index === 0 ? "#9ca3af" : "#111827",
+                           border: "1px solid #d1d5db",
+                         }}
+                       >
+                         Up
+                       </button>
+                       <button
+                         onClick={() => moveItem(index, "down")}
+                         disabled={index === invoiceItems.length - 1}
+                         style={{
+                           padding: "8px 12px",
+                           background: index === invoiceItems.length - 1 ? "#e5e7eb" : "#ffffff",
+                           color: index === invoiceItems.length - 1 ? "#9ca3af" : "#111827",
+                           border: "1px solid #d1d5db",
+                         }}
+                       >
+                         Down
+                       </button>
+                     </div>
+                   </td>
+                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                     <button
+                       onClick={() => removeItem(index)}
+                       style={{
+                         padding: "8px 12px",
+                         background: "#ffffff",
+                         color: "#111827",
+                         border: "1px solid #d1d5db",
+                       }}
+                     >
+                       Remove
+                     </button>
+                   </td>
+                 </tr>
+               ))}
               </tbody>
             </table>
           )}
@@ -583,7 +768,7 @@ export default function InvoicesPage() {
         <div
           style={{
             display: "grid",
-            gap: 10,
+            gap: 16,
             background: "#f9fafb",
             border: "1px solid #e5e7eb",
             borderRadius: 12,
@@ -595,55 +780,111 @@ export default function InvoicesPage() {
             <span style={{ color: "#6b7280" }}>Client type</span>
             <strong>{isBusinessClient ? "Business" : "Private"}</strong>
           </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Subtotal</span>
-            <strong>{totals.subtotal.toFixed(2)}</strong>
+        
+          <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, display: "grid", gap: 10 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "#6b7280",
+              }}
+            >
+              Invoice Summary
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Items total before discount</span>
+              <strong>{totals.grossBeforeDiscount.toFixed(2)}</strong>
+            </div>
+        
+            {totals.discountApplied > 0 ? (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ color: "#6b7280" }}>Discount incl. VAT</span>
+                <strong>-{totals.discountApplied.toFixed(2)}</strong>
+              </div>
+            ) : null}
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Invoice total incl. VAT</span>
+              <strong>{totals.grossTotal.toFixed(2)}</strong>
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Deposit amount</span>
+              <strong>{totals.depositAmount.toFixed(2)}</strong>
+            </div>
           </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>VAT on Sales</span>
-            <strong>{totals.vatAmount.toFixed(2)}</strong>
+        
+          <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, display: "grid", gap: 10 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "#6b7280",
+              }}
+            >
+              Tax & Shipping
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Subtotal</span>
+              <strong>{totals.subtotal.toFixed(2)}</strong>
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>VAT on sales</span>
+              <strong>{totals.vatAmount.toFixed(2)}</strong>
+            </div>
+        
+            {Number(shippingCostInclVat || 0) > 0 ? (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <span style={{ color: "#6b7280" }}>Shipping incl. VAT</span>
+                  <strong>{Number(shippingCostInclVat || 0).toFixed(2)}</strong>
+                </div>
+        
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <span style={{ color: "#6b7280" }}>VAT on shipping</span>
+                  <strong>{totals.shippingVatAmount.toFixed(2)}</strong>
+                </div>
+              </>
+            ) : null}
           </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Shipping incl. VAT</span>
-            <strong>{Number(shippingCostInclVat || 0).toFixed(2)}</strong>
-          </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>VAT on shipping</span>
-            <strong>{totals.shippingVatAmount.toFixed(2)}</strong>
-          </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Total incl. VAT</span>
-            <strong>{totals.grossTotal.toFixed(2)}</strong>
-          </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Deposit amount</span>
-            <strong>{totals.depositAmount.toFixed(2)}</strong>
-          </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Internal cost</span>
-            <strong>{totals.totalCost.toFixed(2)}</strong>
-          </div>
-      
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              marginTop: 6,
-              paddingTop: 12,
-              borderTop: "1px solid #d1d5db",
-              fontSize: 18,
-            }}
-          >
-            <span style={{ fontWeight: 700 }}>Internal profit</span>
-            <strong>{totals.profit.toFixed(2)}</strong>
+        
+          <div style={{ borderTop: "1px solid #d1d5db", paddingTop: 14, display: "grid", gap: 10 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "#6b7280",
+              }}
+            >
+              Internal
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Internal cost</span>
+              <strong>{totals.totalCost.toFixed(2)}</strong>
+            </div>
+        
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                marginTop: 2,
+                fontSize: 18,
+              }}
+            >
+              <span style={{ fontWeight: 700 }}>Internal profit</span>
+              <strong>{totals.profit.toFixed(2)}</strong>
+            </div>
           </div>
         </div>
       

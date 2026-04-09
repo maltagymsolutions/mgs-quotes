@@ -41,6 +41,7 @@ type SavedQuote = {
   vat_rate: number;
   deposit_percent: number;
   shipping_cost_incl_vat: number | null;
+  discount_amount_incl_vat: number | null;
   notes: string | null;
   status: string;
 };
@@ -101,9 +102,13 @@ export default function QuotesPage() {
   const [vatRate, setVatRate] = useState(18);
   const [depositPercent, setDepositPercent] = useState(50);
   const [shippingCostInclVat, setShippingCostInclVat] = useState(0);
+  const [discountAmountInclVat, setDiscountAmountInclVat] = useState(0);
   const [notes, setNotes] = useState("");
   const [quoteItems, setQuoteItems] = useState<QuoteItemDraft[]>([]);
   const [selectedInventoryId, setSelectedInventoryId] = useState("");
+  const [inventorySearchTerm, setInventorySearchTerm] = useState("");
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState("All");
+  const [inventorySortBy, setInventorySortBy] = useState("name-asc");
 
   useEffect(() => {
     loadClients();
@@ -189,6 +194,7 @@ export default function QuotesPage() {
     setVatRate(18);
     setDepositPercent(50);
     setShippingCostInclVat(0);
+    setDiscountAmountInclVat(0);
     setNotes("");
     setQuoteItems([]);
     setSelectedInventoryId("");
@@ -221,6 +227,7 @@ export default function QuotesPage() {
     setVatRate(Number(quote.vat_rate));
     setDepositPercent(Number(quote.deposit_percent));
     setShippingCostInclVat(Number(quote.shipping_cost_incl_vat || 0));
+    setDiscountAmountInclVat(Number(quote.discount_amount_incl_vat || 0));
     setNotes(quote.notes || "");
     setQuoteItems(draftItems);
     setSelectedInventoryId("");
@@ -263,15 +270,38 @@ export default function QuotesPage() {
     setQuoteItems((prev) => prev.filter((_, i) => i !== index));
   }
 
+  function moveItem(index: number, direction: "up" | "down") {
+    setQuoteItems((prev) => {
+      const newItems = [...prev];
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+  
+      if (targetIndex < 0 || targetIndex >= newItems.length) {
+        return prev;
+      }
+  
+      const temp = newItems[index];
+      newItems[index] = newItems[targetIndex];
+      newItems[targetIndex] = temp;
+  
+      return newItems;
+    });
+  }
+
   const isBusinessClient = !!selectedClient?.is_business_client;
 
-  const totals = useMemo(() => {
-    const grossTotal = round2(
+ const totals = useMemo(() => {
+    const grossBeforeDiscount = round2(
       quoteItems.reduce(
         (sum, item) => sum + Number(item.sale_price_incl_vat) * Number(item.qty),
         0
       )
     );
+  
+    const discountApplied = round2(
+      Math.min(Number(discountAmountInclVat || 0), grossBeforeDiscount)
+    );
+  
+    const grossTotal = round2(grossBeforeDiscount - discountApplied);
   
     const salesVatAmount = round2(grossTotal - grossTotal / (1 + vatRate / 100));
   
@@ -296,7 +326,7 @@ export default function QuotesPage() {
     );
   
     const profit = round2(
-      grossTotal - salesVatAmount - shippingCostInclVat + shippingVatAmount - totalCost
+      grossTotal - salesVatAmount - Number(shippingCostInclVat || 0) + shippingVatAmount - totalCost
     );
   
     const depositAmount = round2(grossTotal * (depositPercent / 100));
@@ -304,6 +334,8 @@ export default function QuotesPage() {
     return {
       subtotal,
       vatAmount: salesVatAmount,
+      grossBeforeDiscount,
+      discountApplied,
       grossTotal,
       totalCost,
       shippingVatAmount,
@@ -311,7 +343,40 @@ export default function QuotesPage() {
       profit,
       depositAmount,
     };
-  }, [quoteItems, vatRate, depositPercent, isBusinessClient, shippingCostInclVat]);
+  }, [quoteItems, vatRate, depositPercent, isBusinessClient, shippingCostInclVat, discountAmountInclVat]);
+  const filteredInventoryOptions = useMemo(() => {
+    let items = [...inventory];
+  
+    if (inventorySearchTerm.trim()) {
+      const q = inventorySearchTerm.toLowerCase();
+      items = items.filter(
+        (item) =>
+          item.sku.toLowerCase().includes(q) ||
+          item.name.toLowerCase().includes(q) ||
+          ((item as any).category || "").toLowerCase().includes(q)
+      );
+    }
+  
+    if (inventoryCategoryFilter !== "All") {
+      items = items.filter(
+        (item) => (((item as any).category || "Other") === inventoryCategoryFilter)
+      );
+    }
+  
+    if (inventorySortBy === "name-asc") {
+      items.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (inventorySortBy === "name-desc") {
+      items.sort((a, b) => b.name.localeCompare(a.name));
+    } else if (inventorySortBy === "sku-asc") {
+      items.sort((a, b) => a.sku.localeCompare(b.sku));
+    } else if (inventorySortBy === "price-low") {
+      items.sort((a, b) => a.sale_price_incl_vat - b.sale_price_incl_vat);
+    } else if (inventorySortBy === "price-high") {
+      items.sort((a, b) => b.sale_price_incl_vat - a.sale_price_incl_vat);
+    }
+  
+    return items;
+  }, [inventory, inventorySearchTerm, inventoryCategoryFilter, inventorySortBy]);
 
   async function createClientInline() {
     const displayName = newClientCompanyName || newClientPrivateName;
@@ -421,6 +486,7 @@ export default function QuotesPage() {
           vat_rate: vatRate,
           deposit_percent: depositPercent,
           shipping_cost_incl_vat: shippingCostInclVat,
+          discount_amount_incl_vat: discountAmountInclVat,
           notes: notes || null,
         })
         .eq("id", editingQuoteId);
@@ -479,6 +545,7 @@ export default function QuotesPage() {
         vat_rate: vatRate,
         deposit_percent: depositPercent,
         shipping_cost_incl_vat: shippingCostInclVat,
+        discount_amount_incl_vat: discountAmountInclVat,
         notes: notes || null,
         status: "Draft",
       })
@@ -561,6 +628,7 @@ export default function QuotesPage() {
         vat_rate: quote.vat_rate,
         deposit_percent: quote.deposit_percent,
         shipping_cost_incl_vat: quote.shipping_cost_incl_vat || 0,
+        discount_amount_incl_vat: quote.discount_amount_incl_vat || 0,
         notes: quote.notes,
         status: "Unpaid",
       })
@@ -806,7 +874,15 @@ export default function QuotesPage() {
               onChange={(e) => setShippingCostInclVat(Number(e.target.value || 0))}
             />
           </div>
-
+          <div>
+            <label>Discount Amount incl. VAT</label>
+            <input
+              style={{ width: "100%", padding: 10, marginTop: 4 }}
+              type="number"
+              value={discountAmountInclVat}
+              onChange={(e) => setDiscountAmountInclVat(Number(e.target.value || 0))}
+            />
+          </div>
           <div>
             <label>Notes</label>
             <textarea
@@ -821,44 +897,97 @@ export default function QuotesPage() {
       <section style={{ border: "1px solid #ccc", padding: 16, borderRadius: 8, marginTop: 24 }}>
         <h2>Add Items</h2>
 
+       <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(220px, 1.2fr) minmax(220px, 1fr) minmax(220px, 1fr)",
+            gap: 14,
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <label>Search</label>
+            <input
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              placeholder="Search by SKU, name, or category"
+              value={inventorySearchTerm}
+              onChange={(e) => setInventorySearchTerm(e.target.value)}
+            />
+          </div>
+        
+          <div>
+            <label>Category</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={inventoryCategoryFilter}
+              onChange={(e) => setInventoryCategoryFilter(e.target.value)}
+            >
+              <option value="All">All categories</option>
+              <option value="Treadmills">Treadmills</option>
+              <option value="Ellipticals">Ellipticals</option>
+              <option value="Indoor Cycling">Indoor Cycling</option>
+              <option value="Recumbent Bikes">Recumbent Bikes</option>
+              <option value="Rowers">Rowers</option>
+              <option value="Strength">Strength</option>
+              <option value="Accessories">Accessories</option>
+              <option value="Plates">Plates</option>
+              <option value="Bars">Bars</option>
+              <option value="Dumbbells">Dumbbells</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        
+          <div>
+            <label>Sort</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={inventorySortBy}
+              onChange={(e) => setInventorySortBy(e.target.value)}
+            >
+              <option value="name-asc">Name A-Z</option>
+              <option value="name-desc">Name Z-A</option>
+              <option value="sku-asc">SKU A-Z</option>
+              <option value="price-low">Price low to high</option>
+              <option value="price-high">Price high to low</option>
+            </select>
+          </div>
+        </div>
+        
         <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 300 }}>
             <label>Inventory Item</label>
             <select
-              style={{ width: "100%", padding: 10, marginTop: 4 }}
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
               value={selectedInventoryId}
               onChange={(e) => setSelectedInventoryId(e.target.value)}
             >
               <option value="">Select an item</option>
-              {inventory.map((item) => (
+              {filteredInventoryOptions.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.sku} - {item.name}
                 </option>
               ))}
             </select>
           </div>
-
+        
           <button onClick={addSelectedInventoryItem} style={{ padding: "10px 14px" }}>
             Add Item
           </button>
         </div>
 
-        <div style={{ marginTop: 20 }}>
+       <div style={{ marginTop: 20 }}>
           {quoteItems.length === 0 ? (
             <p>No items added yet.</p>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                <thead>
-                   <tr>
-                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>SKU</th>
-                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Name</th>
-                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Qty</th>
-                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Sale incl. VAT</th>
-                     <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Action</th>
-                   </tr>
-                 </thead>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>SKU</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Name</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Qty</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Sale incl. VAT</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Order</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -876,6 +1005,34 @@ export default function QuotesPage() {
                     </td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.sale_price_incl_vat}</td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => moveItem(index, "up")}
+                          disabled={index === 0}
+                          style={{
+                            padding: "8px 12px",
+                            background: index === 0 ? "#e5e7eb" : "#ffffff",
+                            color: index === 0 ? "#9ca3af" : "#111827",
+                            border: "1px solid #d1d5db",
+                          }}
+                        >
+                          Up
+                        </button>
+                        <button
+                          onClick={() => moveItem(index, "down")}
+                          disabled={index === quoteItems.length - 1}
+                          style={{
+                            padding: "8px 12px",
+                            background: index === quoteItems.length - 1 ? "#e5e7eb" : "#ffffff",
+                            color: index === quoteItems.length - 1 ? "#9ca3af" : "#111827",
+                            border: "1px solid #d1d5db",
+                          }}
+                        >
+                          Down
+                        </button>
+                      </div>
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                       <button onClick={() => removeItem(index)}>Remove</button>
                     </td>
                   </tr>
@@ -884,7 +1041,7 @@ export default function QuotesPage() {
             </table>
           )}
         </div>
-      </section>
+        </section>
 
       <section style={{ border: "1px solid #ccc", padding: 16, borderRadius: 8, marginTop: 24 }}>
         <h2>Totals</h2>
@@ -892,7 +1049,7 @@ export default function QuotesPage() {
         <div
           style={{
             display: "grid",
-            gap: 10,
+            gap: 16,
             background: "#f9fafb",
             border: "1px solid #e5e7eb",
             borderRadius: 12,
@@ -904,57 +1061,114 @@ export default function QuotesPage() {
             <span style={{ color: "#6b7280" }}>Client type</span>
             <strong>{isBusinessClient ? "Business" : "Private"}</strong>
           </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Subtotal</span>
-            <strong>{totals.subtotal.toFixed(2)}</strong>
+        
+          <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, display: "grid", gap: 10 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "#6b7280",
+              }}
+            >
+              Quote Summary
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Items total before discount</span>
+              <strong>{totals.grossBeforeDiscount.toFixed(2)}</strong>
+            </div>
+        
+            {totals.discountApplied > 0 ? (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ color: "#6b7280" }}>Discount incl. VAT</span>
+                <strong>-{totals.discountApplied.toFixed(2)}</strong>
+              </div>
+            ) : null}
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Quote total incl. VAT</span>
+              <strong>{totals.grossTotal.toFixed(2)}</strong>
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Deposit amount</span>
+              <strong>{totals.depositAmount.toFixed(2)}</strong>
+            </div>
           </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>VAT on sales</span>
-            <strong>{totals.vatAmount.toFixed(2)}</strong>
+        
+          <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, display: "grid", gap: 10 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "#6b7280",
+              }}
+            >
+              Tax & Shipping
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Subtotal</span>
+              <strong>{totals.subtotal.toFixed(2)}</strong>
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>VAT on sales</span>
+              <strong>{totals.vatAmount.toFixed(2)}</strong>
+            </div>
+        
+            {Number(shippingCostInclVat || 0) > 0 ? (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <span style={{ color: "#6b7280" }}>Shipping incl. VAT</span>
+                  <strong>{Number(shippingCostInclVat || 0).toFixed(2)}</strong>
+                </div>
+        
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <span style={{ color: "#6b7280" }}>VAT on shipping</span>
+                  <strong>{totals.shippingVatAmount.toFixed(2)}</strong>
+                </div>
+              </>
+            ) : null}
           </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Shipping incl. VAT</span>
-            <strong>{Number(shippingCostInclVat || 0).toFixed(2)}</strong>
-          </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>VAT on shipping</span>
-            <strong>{totals.shippingVatAmount.toFixed(2)}</strong>
-          </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Total incl. VAT</span>
-            <strong>{totals.grossTotal.toFixed(2)}</strong>
-          </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Deposit amount</span>
-            <strong>{totals.depositAmount.toFixed(2)}</strong>
-          </div>
-      
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ color: "#6b7280" }}>Internal cost</span>
-            <strong>{totals.totalCost.toFixed(2)}</strong>
-          </div>
-      
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 12,
-              marginTop: 6,
-              paddingTop: 12,
-              borderTop: "1px solid #d1d5db",
-              fontSize: 18,
-            }}
-          >
-            <span style={{ fontWeight: 700 }}>Internal profit</span>
-            <strong>{totals.profit.toFixed(2)}</strong>
+        
+          <div style={{ borderTop: "1px solid #d1d5db", paddingTop: 14, display: "grid", gap: 10 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "#6b7280",
+              }}
+            >
+              Internal
+            </div>
+        
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ color: "#6b7280" }}>Internal cost</span>
+              <strong>{totals.totalCost.toFixed(2)}</strong>
+            </div>
+        
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                marginTop: 2,
+                fontSize: 18,
+              }}
+            >
+              <span style={{ fontWeight: 700 }}>Internal profit</span>
+              <strong>{totals.profit.toFixed(2)}</strong>
+            </div>
           </div>
         </div>
+          
       
         <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
           <button onClick={saveQuote} style={{ padding: "10px 14px" }}>
