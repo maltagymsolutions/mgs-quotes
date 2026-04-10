@@ -124,16 +124,26 @@ export default function QuoteDetailPage({ params }: PageProps) {
     <main className="document-shell" style={{ padding: 12, fontFamily: "Arial, sans-serif", maxWidth: 1020 }}>
       <div
         className="no-print"
-        style={{ marginBottom: 20, display: "flex", gap: 16, alignItems: "center" }}
+        style={{ marginBottom: 20, display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}
       >
         <Link href="/quotes">← Back to quotes</Link>
         <Link href="/">Dashboard</Link>
-        <button
-          onClick={() => window.print()}
-          style={{ padding: "10px 14px", cursor: "pointer" }}
+        <a
+          href={`/api/quotes/${quoteId}/pdf`}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display: "inline-block",
+            padding: "10px 14px",
+            background: "#111827",
+            color: "#ffffff",
+            textDecoration: "none",
+            borderRadius: 8,
+          }}
         >
-          Print / Save PDF
-        </button>
+          Generate PDF
+        </a>
+       
       </div>
 
       <div

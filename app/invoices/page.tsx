@@ -59,6 +59,8 @@ type CompanySettings = {
   next_invoice_number: number;
 };
 
+const INVOICE_STATUSES = ["Unpaid", "Deposit Paid", "Fully Paid", "Archived"] as const;
+
 function round2(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -495,15 +497,10 @@ export default function InvoicesPage() {
     return client?.company_name || client?.private_name || "Unknown client";
   }
   
-  async function archiveInvoice(invoiceId: string) {
-    const confirmed = window.confirm("Archive this invoice?");
-    if (!confirmed) return;
-  
-    setMessage("Archiving invoice...");
-  
+  async function updateInvoiceStatus(invoiceId: string, status: string) {
     const { error } = await supabase
       .from("invoices")
-      .update({ status: "Archived" })
+      .update({ status })
       .eq("id", invoiceId);
   
     if (error) {
@@ -511,8 +508,16 @@ export default function InvoicesPage() {
       return;
     }
   
-    setMessage("Invoice archived.");
+    setMessage(`Invoice status updated to ${status}.`);
     await loadInvoices();
+  }
+  
+  async function archiveInvoice(invoiceId: string) {
+    const confirmed = window.confirm("Archive this invoice?");
+    if (!confirmed) return;
+  
+    setMessage("Archiving invoice...");
+    await updateInvoiceStatus(invoiceId, "Archived");
   }
 
   return (
@@ -924,8 +929,26 @@ export default function InvoicesPage() {
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{invoice.invoice_number}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{getClientName(invoice.client_id)}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{invoice.date_issued}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{invoice.status}</td>
-                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                    <select
+                      value={invoice.status}
+                      onChange={(e) => updateInvoiceStatus(invoice.id, e.target.value)}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: 10,
+                        border: "1px solid #d1d5db",
+                        background: "#ffffff",
+                        color: "#111827",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {INVOICE_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </td>                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                     <Link
                       href={`/invoices/${invoice.id}`}
                       style={{
