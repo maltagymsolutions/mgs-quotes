@@ -32,13 +32,13 @@ export async function GET(
     .select("*")
     .eq("invoice_id", invoice.id);
 
-  const stream = await renderToStream(
-    React.createElement(InvoicePdf, {
-      invoice,
-      client,
-      items: items || [],
-    })
-  );
+ const pdfElement = React.createElement(InvoicePdf, {
+    invoice,
+    client,
+    items: items || [],
+  }) as React.ReactElement<any>;
+  
+  const stream = await renderToStream(pdfElement);
 
   return new NextResponse(stream as any, {
     headers: {

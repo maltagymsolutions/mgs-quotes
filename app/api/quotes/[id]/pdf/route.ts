@@ -32,14 +32,14 @@ export async function GET(
     .select("*")
     .eq("quote_id", quote.id);
 
-  const stream = await renderToStream(
-    React.createElement(QuotePdf, {
-      quote,
-      client,
-      items: items || [],
-    })
-  );
-
+  const pdfElement = React.createElement(QuotePdf, {
+    quote,
+    client,
+    items: items || [],
+  }) as React.ReactElement<any>;
+  
+  const stream = await renderToStream(pdfElement);
+  
   return new NextResponse(stream as any, {
     headers: {
       "Content-Type": "application/pdf",
