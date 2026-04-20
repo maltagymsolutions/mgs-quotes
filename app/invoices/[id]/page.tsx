@@ -97,7 +97,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
 
   const isBusinessClient = !!client?.is_business_client;
   
-  const grossTotal = round2(
+  const grossBeforeDiscount = round2(
     invoiceItems.reduce(
       (sum, item) => sum + Number(item.sale_price_incl_vat) * Number(item.qty),
       0
@@ -105,22 +105,22 @@ export default function InvoiceDetailPage({ params }: PageProps) {
   );
   
   const discountAmount = round2(
-    Math.min(Number(invoice.discount_amount_incl_vat || 0), grossTotal)
+    Math.min(Number(invoice.discount_amount_incl_vat || 0), grossBeforeDiscount)
   );
   
-  const grossAfterDiscount = round2(grossTotal - discountAmount);
+  const grossAfterDiscount = round2(grossBeforeDiscount - discountAmount);
   
-  const subtotal = isBusinessClient
-    ? round2(grossAfterDiscount / (1 + Number(invoice.vat_rate) / 100))
-    : grossAfterDiscount;
+  const subtotal = grossBeforeDiscount;
   
-  const vatAmount = isBusinessClient
-    ? round2(grossAfterDiscount - subtotal)
-    : round2(grossAfterDiscount - grossAfterDiscount / (1 + Number(invoice.vat_rate) / 100));
+  const vatAmount = round2(
+    grossBeforeDiscount - grossBeforeDiscount / (1 + Number(invoice.vat_rate) / 100)
+  );
   
-  const depositAmount = round2(grossAfterDiscount * (Number(invoice.deposit_percent) / 100));
-  const balanceDue = round2(grossAfterDiscount - depositAmount);
+  const depositAmount = round2(
+    grossAfterDiscount * (Number(invoice.deposit_percent) / 100)
+  );
   
+  const balanceDue = round2(grossAfterDiscount - depositAmount);  
   return (
     <main
       className="document-shell"
@@ -375,8 +375,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
               <tfoot>
                 <tr>
                   <td colSpan={4} style={{ padding: 6, borderTop: "2px solid #111", fontWeight: 600 }}>
-                    {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal"}
-                  </td>
+                    {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}					</td>
                   <td
                     style={{
                       padding: 6,

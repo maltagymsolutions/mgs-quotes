@@ -97,7 +97,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
   const isBusinessClient = !!client?.is_business_client;
 
-  const grossTotal = round2(
+  const grossBeforeDiscount = round2(
     quoteItems.reduce(
       (sum, item) => sum + Number(item.sale_price_incl_vat) * Number(item.qty),
       0
@@ -105,18 +105,18 @@ export default function QuoteDetailPage({ params }: PageProps) {
   );
   
   const discountAmount = round2(
-    Math.min(Number(quote.discount_amount_incl_vat || 0), grossTotal)
+    Math.min(Number(quote.discount_amount_incl_vat || 0), grossBeforeDiscount)
   );
   
-  const grossAfterDiscount = round2(grossTotal - discountAmount);
+  const grossAfterDiscount = round2(grossBeforeDiscount - discountAmount);
   
   const subtotal = isBusinessClient
-    ? round2(grossAfterDiscount / (1 + Number(quote.vat_rate) / 100))
-    : grossAfterDiscount;
+    ? round2(grossBeforeDiscount / (1 + Number(quote.vat_rate) / 100))
+    : grossBeforeDiscount;
   
   const vatAmount = isBusinessClient
-    ? round2(grossAfterDiscount - subtotal)
-    : round2(grossAfterDiscount - grossAfterDiscount / (1 + Number(quote.vat_rate) / 100));
+    ? round2(grossBeforeDiscount - subtotal)
+    : round2(grossBeforeDiscount - grossBeforeDiscount / (1 + Number(quote.vat_rate) / 100));
   
   const depositAmount = round2(grossAfterDiscount * (Number(quote.deposit_percent) / 100));
 
@@ -341,8 +341,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
               <tfoot>
                 <tr>
                   <td colSpan={4} style={{ padding: 6, borderTop: "2px solid #111", fontWeight: 600 }}>
-                    {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal"}
-                  </td>
+                    {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}                  </td>
                   <td style={{ padding: 6, borderTop: "2px solid #111", textAlign: "right", fontWeight: 600 }}>
                     {money(subtotal)}
                   </td>

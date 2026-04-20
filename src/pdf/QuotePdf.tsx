@@ -158,23 +158,23 @@ export default function QuotePdf({ quote, client, items }: QuotePdfProps) {
       0
     )
   );
-
+  
   const discountAmount = round2(
     Math.min(Number(quote.discount_amount_incl_vat || 0), grossBeforeDiscount)
   );
-
+  
   const grossAfterDiscount = round2(grossBeforeDiscount - discountAmount);
-
+  
   const subtotal = isBusinessClient
-    ? round2(grossAfterDiscount / (1 + Number(quote.vat_rate) / 100))
-    : grossAfterDiscount;
-
+    ? round2(grossBeforeDiscount / (1 + Number(quote.vat_rate) / 100))
+    : grossBeforeDiscount;
+  
   const vatAmount = isBusinessClient
-    ? round2(grossAfterDiscount - subtotal)
+    ? round2(grossBeforeDiscount - subtotal)
     : round2(
-        grossAfterDiscount - grossAfterDiscount / (1 + Number(quote.vat_rate) / 100)
+        grossBeforeDiscount - grossBeforeDiscount / (1 + Number(quote.vat_rate) / 100)
       );
-
+  
   const depositAmount = round2(
     grossAfterDiscount * (Number(quote.deposit_percent) / 100)
   );
@@ -252,8 +252,7 @@ export default function QuotePdf({ quote, client, items }: QuotePdfProps) {
 
               <View style={styles.footerRow}>
                 <Text style={styles.footerLabel}>
-                  {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal"}
-                </Text>
+                  {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}                </Text>
                 <Text style={styles.footerValue}>{money(subtotal)}</Text>
               </View>
 

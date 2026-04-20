@@ -84,20 +84,17 @@ export default function InvoicePdf({ invoice, client, items }: InvoicePdfProps) 
 
   const grossAfterDiscount = round2(grossBeforeDiscount - discountAmount);
 
-  const subtotal = isBusinessClient
-    ? round2(grossAfterDiscount / (1 + Number(invoice.vat_rate) / 100))
-    : grossAfterDiscount;
-
+ const subtotal = isBusinessClient
+    ? round2(grossBeforeDiscount / (1 + Number(invoice.vat_rate) / 100))
+    : grossBeforeDiscount;
+  
   const vatAmount = isBusinessClient
-    ? round2(grossAfterDiscount - subtotal)
+    ? round2(grossBeforeDiscount - subtotal)
     : round2(
-        grossAfterDiscount - grossAfterDiscount / (1 + Number(invoice.vat_rate) / 100)
+        grossBeforeDiscount - grossBeforeDiscount / (1 + Number(invoice.vat_rate) / 100)
       );
-
-  const depositAmount = round2(
-    grossAfterDiscount * (Number(invoice.deposit_percent) / 100)
-  );
-
+  
+  const depositAmount = round2(grossAfterDiscount * (Number(invoice.deposit_percent) / 100));
   const balanceDue = round2(grossAfterDiscount - depositAmount);
 
   return (
@@ -173,8 +170,7 @@ export default function InvoicePdf({ invoice, client, items }: InvoicePdfProps) 
 
               <View style={styles.footerRow}>
                 <Text style={styles.footerLabel}>
-                  {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal"}
-                </Text>
+                  {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}                </Text>
                 <Text style={styles.footerValue}>{money(subtotal)}</Text>
               </View>
 
