@@ -18,12 +18,9 @@ function round2(value: number) {
 }
 
 function money(value: number) {
-  return new Intl.NumberFormat("en-MT", {
-    style: "currency",
-    currency: "EUR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
+
+  return `€\u00A0${Number(value || 0).toFixed(2)}`;
+
 }
 
 const styles = StyleSheet.create({
