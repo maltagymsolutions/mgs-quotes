@@ -79,6 +79,8 @@ function buildInvoiceNumber(prefix: string, nextNumber: number) {
   return `${prefix}-${year}-${nextNumber}`;
 }
 
+const DEFAULT_NOTES = "Price includes ground floor delivery and installation";
+
 export default function InvoicesPage() {
   const supabase = createClient();
 
@@ -94,7 +96,7 @@ export default function InvoicesPage() {
   const [depositPercent, setDepositPercent] = useState(50);
   const [shippingCostInclVat, setShippingCostInclVat] = useState(0);
   const [discountAmountInclVat, setDiscountAmountInclVat] = useState(0);
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(DEFAULT_NOTES);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemDraft[]>([]);
   const [selectedInventoryId, setSelectedInventoryId] = useState("");
   const [inventorySearchTerm, setInventorySearchTerm] = useState("");
@@ -179,7 +181,7 @@ export default function InvoicesPage() {
     setDepositPercent(50);
     setShippingCostInclVat(0);
     setDiscountAmountInclVat(0);
-    setNotes("");
+    setNotes(DEFAULT_NOTES);
     setInvoiceItems([]);
     setSelectedInventoryId("");
     setInventorySearchTerm("");
@@ -215,7 +217,7 @@ export default function InvoicesPage() {
     setDepositPercent(Number(invoice.deposit_percent));
     setShippingCostInclVat(Number(invoice.shipping_cost_incl_vat || 0));
     setDiscountAmountInclVat(Number(invoice.discount_amount_incl_vat || 0));
-    setNotes(invoice.notes || "");
+    setNotes(invoice.notes || DEFAULT_NOTES);
     setInvoiceItems(draftItems);
     setSelectedInventoryId("");
     setMessage(`Editing ${invoice.invoice_number}`);
