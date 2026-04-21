@@ -97,7 +97,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
 
   const isBusinessClient = !!client?.is_business_client;
   
-  const grossBeforeDiscount = round2(
+ const grossBeforeDiscount = round2(
     invoiceItems.reduce(
       (sum, item) => sum + Number(item.sale_price_incl_vat) * Number(item.qty),
       0
@@ -110,17 +110,19 @@ export default function InvoiceDetailPage({ params }: PageProps) {
   
   const grossAfterDiscount = round2(grossBeforeDiscount - discountAmount);
   
-  const subtotal = grossBeforeDiscount;
+  const subtotal = isBusinessClient
+    ? round2(grossBeforeDiscount / (1 + Number(invoice.vat_rate) / 100))
+    : grossBeforeDiscount;
   
   const vatAmount = round2(
-    grossBeforeDiscount - grossBeforeDiscount / (1 + Number(invoice.vat_rate) / 100)
+    grossAfterDiscount - grossAfterDiscount / (1 + Number(invoice.vat_rate) / 100)
   );
   
   const depositAmount = round2(
     grossAfterDiscount * (Number(invoice.deposit_percent) / 100)
   );
   
-  const balanceDue = round2(grossAfterDiscount - depositAmount);  
+  const balanceDue = round2(grossAfterDiscount - depositAmount);
   return (
     <main
       className="document-shell"
@@ -375,7 +377,8 @@ export default function InvoiceDetailPage({ params }: PageProps) {
               <tfoot>
                 <tr>
                   <td colSpan={4} style={{ padding: 6, borderTop: "2px solid #111", fontWeight: 600 }}>
-                    {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}					</td>
+                    {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}
+                  </td>
                   <td
                     style={{
                       padding: 6,
@@ -385,20 +388,6 @@ export default function InvoiceDetailPage({ params }: PageProps) {
                     }}
                   >
                     {money(subtotal)}
-                  </td>
-                </tr>
-                <tr>
-                  <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc" }}>
-                    VAT {Number(invoice.vat_rate).toFixed(2)}%
-                  </td>
-                  <td
-                    style={{
-                      padding: 6,
-                      borderTop: "1px dotted #ccc",
-                      textAlign: "right",
-                    }}
-                  >
-                    {money(vatAmount)}
                   </td>
                 </tr>
                 {discountAmount > 0 ? (
@@ -418,6 +407,20 @@ export default function InvoiceDetailPage({ params }: PageProps) {
                     </td>
                   </tr>
                 ) : null}
+                <tr>
+                  <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc" }}>
+                    VAT {Number(invoice.vat_rate).toFixed(2)}%
+                  </td>
+                  <td
+                    style={{
+                      padding: 6,
+                      borderTop: "1px dotted #ccc",
+                      textAlign: "right",
+                    }}
+                  >
+                    {money(vatAmount)}
+                  </td>
+                </tr>
                 <tr>
                   <td
                     colSpan={4}
@@ -476,23 +479,12 @@ export default function InvoiceDetailPage({ params }: PageProps) {
             </table>
           </div>
 
-          <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
-            <div>
-              Payment Terms: A deposit of {money(depositAmount)} ({invoice.deposit_percent}% of the
-              total invoice value after discount) is payable upon order confirmation.
-            </div>
-           {discountAmount > 0 ? (
-              <div>
-                Discount applied: {money(discountAmount)}.
-              </div>
-            ) : null}
-            <div>
-              The remaining balance of {money(balanceDue)} is payable upon delivery.
-            </div>
-            <div>
-              Kindly transfer the deposit amount of {money(depositAmount)} to the bank account listed
-              below, quoting invoice number {invoice.invoice_number} as reference.
-            </div>
+        <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
+            <div style={{ fontWeight: 700 }}>PAYMENT TERMS</div>
+            <div>Deposit required: {money(depositAmount)} ({invoice.deposit_percent}% of total after discount).</div>
+            <div>Balance due on delivery: {money(balanceDue)}.</div>
+            {discountAmount > 0 ? <div>Discount applied: {money(discountAmount)}.</div> : null}
+            <div>Transfer the deposit quoting invoice number {invoice.invoice_number} as reference.</div>
           </div>
 
           <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>

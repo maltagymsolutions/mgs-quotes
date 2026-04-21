@@ -303,11 +303,13 @@ export default function QuotesPage() {
   
     const grossTotal = round2(grossBeforeDiscount - discountApplied);
   
-    const salesVatAmount = round2(grossTotal - grossTotal / (1 + vatRate / 100));
-  
+   const salesVatAmount = round2(
+      grossTotal - grossTotal / (1 + vatRate / 100)
+    );
+    
     const subtotal = isBusinessClient
-      ? round2(grossTotal / (1 + vatRate / 100))
-      : grossTotal;
+      ? round2(grossBeforeDiscount / (1 + vatRate / 100))
+      : grossBeforeDiscount;
   
     const totalCost = round2(
       quoteItems.reduce(

@@ -170,9 +170,9 @@ export default function QuotePdf({ quote, client, items }: QuotePdfProps) {
     : grossBeforeDiscount;
   
   const vatAmount = isBusinessClient
-    ? round2(grossBeforeDiscount - subtotal)
+    ? round2(grossAfterDiscount - round2(grossAfterDiscount / (1 + Number(quote.vat_rate) / 100)))
     : round2(
-        grossBeforeDiscount - grossBeforeDiscount / (1 + Number(quote.vat_rate) / 100)
+        grossAfterDiscount - grossAfterDiscount / (1 + Number(quote.vat_rate) / 100)
       );
   
   const depositAmount = round2(
@@ -252,23 +252,26 @@ export default function QuotePdf({ quote, client, items }: QuotePdfProps) {
 
               <View style={styles.footerRow}>
                 <Text style={styles.footerLabel}>
-                  {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}                </Text>
+                  {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}
+                </Text>
                 <Text style={styles.footerValue}>{money(subtotal)}</Text>
               </View>
-
-              <View style={styles.footerRow}>
-                <Text style={styles.footerLabel}>
-                  VAT {Number(quote.vat_rate).toFixed(2)}%
-                </Text>
-                <Text style={styles.footerValue}>{money(vatAmount)}</Text>
-              </View>
-
+              
               {discountAmount > 0 ? (
                 <View style={styles.footerRow}>
                   <Text style={styles.footerLabel}>Discount incl. VAT</Text>
                   <Text style={styles.footerValue}>-{money(discountAmount)}</Text>
                 </View>
               ) : null}
+              
+              <View style={styles.footerRow}>
+ <Text style={styles.footerLabel}>
+                  {discountAmount > 0
+                    ? `VAT ${Number(quote.vat_rate).toFixed(2)}% on discounted amount`
+                    : `VAT ${Number(quote.vat_rate).toFixed(2)}%`}
+                </Text>
+                <Text style={styles.footerValue}>{money(vatAmount)}</Text>
+              </View>
 
               <View style={styles.footerRow}>
                 <Text style={[styles.footerLabel, styles.totalLabel, styles.totalRowLabel]}>
@@ -281,12 +284,11 @@ export default function QuotePdf({ quote, client, items }: QuotePdfProps) {
             </View>
 
             <View style={styles.section}>
-              <Text>
-                Payment Terms: {quote.deposit_percent}% deposit upon order ({money(depositAmount)}),
-                remaining balance upon delivery.
-                {discountAmount > 0 ? ` Discount applied: ${money(discountAmount)}.` : ""}
-              </Text>
-              <Text>Quote Validity: 10 days from date of issue</Text>
+              <Text style={styles.bold}>PAYMENT TERMS</Text>
+              <Text>Deposit required: {quote.deposit_percent}% ({money(depositAmount)}) upon order.</Text>
+              <Text>Remaining balance payable on delivery.</Text>
+              {discountAmount > 0 ? <Text>Discount applied: {money(discountAmount)}.</Text> : null}
+              <Text>Quote validity: 10 days from date of issue.</Text>
             </View>
 
             <View style={styles.section}>

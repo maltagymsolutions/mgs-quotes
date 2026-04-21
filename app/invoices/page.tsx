@@ -290,11 +290,13 @@ export default function InvoicesPage() {
   
     const grossTotal = round2(grossBeforeDiscount - discountApplied);
   
-    const salesVatAmount = round2(grossTotal - grossTotal / (1 + vatRate / 100));
-  
+  const salesVatAmount = round2(
+      grossTotal - grossTotal / (1 + vatRate / 100)
+    );
+    
     const subtotal = isBusinessClient
-      ? round2(grossTotal / (1 + vatRate / 100))
-      : grossTotal;
+      ? round2(grossBeforeDiscount / (1 + vatRate / 100))
+      : grossBeforeDiscount;
   
     const totalCost = round2(
       invoiceItems.reduce(
@@ -836,13 +838,13 @@ export default function InvoicesPage() {
             </div>
         
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span style={{ color: "#6b7280" }}>Subtotal</span>
-              <strong>{totals.subtotal.toFixed(2)}</strong>
+              <span style={{ color: "#6b7280" }}>
+                {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}
+              </span>              <strong>{totals.subtotal.toFixed(2)}</strong>
             </div>
         
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span style={{ color: "#6b7280" }}>VAT on sales</span>
-              <strong>{totals.vatAmount.toFixed(2)}</strong>
+              <span style={{ color: "#6b7280" }}>VAT on discounted total</span>              <strong>{totals.vatAmount.toFixed(2)}</strong>
             </div>
         
             {Number(shippingCostInclVat || 0) > 0 ? (
@@ -948,7 +950,8 @@ export default function InvoicesPage() {
                         </option>
                       ))}
                     </select>
-                  </td>                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                  </td>
+                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                     <Link
                       href={`/invoices/${invoice.id}`}
                       style={{

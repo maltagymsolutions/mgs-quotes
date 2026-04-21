@@ -114,10 +114,9 @@ export default function QuoteDetailPage({ params }: PageProps) {
     ? round2(grossBeforeDiscount / (1 + Number(quote.vat_rate) / 100))
     : grossBeforeDiscount;
   
-  const vatAmount = isBusinessClient
-    ? round2(grossBeforeDiscount - subtotal)
-    : round2(grossBeforeDiscount - grossBeforeDiscount / (1 + Number(quote.vat_rate) / 100));
-  
+  const vatAmount = round2(
+    grossAfterDiscount - grossAfterDiscount / (1 + Number(quote.vat_rate) / 100)
+  );  
   const depositAmount = round2(grossAfterDiscount * (Number(quote.deposit_percent) / 100));
 
   return (
@@ -341,17 +340,10 @@ export default function QuoteDetailPage({ params }: PageProps) {
               <tfoot>
                 <tr>
                   <td colSpan={4} style={{ padding: 6, borderTop: "2px solid #111", fontWeight: 600 }}>
-                    {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}                  </td>
+                    {isBusinessClient ? "Subtotal excl. VAT" : "Subtotal incl. VAT"}
+                  </td>
                   <td style={{ padding: 6, borderTop: "2px solid #111", textAlign: "right", fontWeight: 600 }}>
                     {money(subtotal)}
-                  </td>
-                </tr>
-                <tr>
-                  <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc" }}>
-                    VAT {Number(quote.vat_rate).toFixed(2)}%
-                  </td>
-                  <td style={{ padding: 6, borderTop: "1px dotted #ccc", textAlign: "right" }}>
-                    {money(vatAmount)}
                   </td>
                 </tr>
                 {discountAmount > 0 ? (
@@ -364,6 +356,21 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     </td>
                   </tr>
                 ) : null}
+                <tr>
+                
+                  <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc" }}>
+                
+                    VAT on discounted total {Number(quote.vat_rate).toFixed(2)}%
+                
+                  </td>
+                
+                  <td style={{ padding: 6, borderTop: "1px dotted #ccc", textAlign: "right" }}>
+                
+                    {money(vatAmount)}
+                
+                  </td>
+                
+                </tr>
                 <tr>
                   <td
                     colSpan={4}
@@ -381,12 +388,12 @@ export default function QuoteDetailPage({ params }: PageProps) {
             </table>
           </div>
 
-          <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
-            <div>
-              Payment Terms: {quote.deposit_percent}% deposit upon order ({money(depositAmount)}),
-              remaining balance upon delivery.{discountAmount > 0 ? ` Discount applied: ${money(discountAmount)}.` : ""}
-            </div>
-            <div>Quote Validity: 10 days from date of issue</div>
+  <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
+            <div style={{ fontWeight: 700 }}>PAYMENT TERMS</div>
+            <div>Deposit required: {quote.deposit_percent}% ({money(depositAmount)}) upon order.</div>
+            <div>Remaining balance payable on delivery.</div>
+            {discountAmount > 0 ? <div>Discount applied: {money(discountAmount)}.</div> : null}
+            <div>Quote validity: 10 days from date of issue.</div>
           </div>
 
           <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
