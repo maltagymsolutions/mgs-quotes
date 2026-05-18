@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -14,7 +14,7 @@ export async function middleware(request: NextRequest) {
         get(name: string) {
           return request.cookies.get(name)?.value;
         },
-        set(name: string, value: string, options: Record<string, any>) {
+        set(name: string, value: string, options: CookieOptions) {
           request.cookies.set({
             name,
             value,
@@ -29,7 +29,7 @@ export async function middleware(request: NextRequest) {
             ...options,
           });
         },
-        remove(name: string, options: Record<string, any>) {
+        remove(name: string, options: CookieOptions) {
           request.cookies.set({
             name,
             value: "",
@@ -70,5 +70,14 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/clients", "/inventory", "/quotes", "/quotes/:path*", "/invoices", "/invoices/:path*"],
+  matcher: [
+    "/",
+    "/clients",
+    "/inventory",
+    "/quotes",
+    "/quotes/:path*",
+    "/invoices",
+    "/invoices/:path*",
+    "/expenses",
+  ],
 };
