@@ -2,10 +2,44 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { formatDisplayDate } from "@/src/lib/format-date";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type PageProps = {
   params: Promise<{ id: string }>;
+};
+
+type CompanySettings = {
+  vat_number: string | null;
+};
+
+type Client = {
+  is_business_client?: boolean | null;
+  company_name?: string | null;
+  private_name?: string | null;
+  contact_person?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  vat_number?: string | null;
+  address?: string | null;
+};
+
+type Quote = {
+  id: string;
+  client_id: string;
+  date_issued: string;
+  quote_number: string;
+  vat_rate: number | string;
+  discount_amount_incl_vat?: number | string | null;
+  deposit_percent: number | string;
+  notes?: string | null;
+};
+
+type QuoteItem = {
+  id: string;
+  name: string;
+  sale_price_incl_vat: number | string;
+  qty: number | string;
 };
 
 function round2(value: number) {
@@ -25,9 +59,10 @@ export default function QuoteDetailPage({ params }: PageProps) {
   const supabase = createClient();
 
   const [quoteId, setQuoteId] = useState("");
-  const [quote, setQuote] = useState<any>(null);
-  const [client, setClient] = useState<any>(null);
-  const [quoteItems, setQuoteItems] = useState<any[]>([]);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [client, setClient] = useState<Client | null>(null);
+  const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -69,8 +104,15 @@ export default function QuoteDetailPage({ params }: PageProps) {
         .select("*")
         .eq("quote_id", quoteData.id);
 
+      const { data: companySettingsData } = await supabase
+        .from("company_settings")
+        .select("vat_number")
+        .limit(1)
+        .single();
+
       setClient(clientData || null);
       setQuoteItems(itemsData || []);
+      setCompanySettings(companySettingsData || null);
       setLoading(false);
     }
 
@@ -118,6 +160,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
     grossAfterDiscount - grossAfterDiscount / (1 + Number(quote.vat_rate) / 100)
   );  
   const depositAmount = round2(grossAfterDiscount * (Number(quote.deposit_percent) / 100));
+  const companyVatNumber = companySettings?.vat_number || "MT32755725";
 
   return (
     <main className="document-shell" style={{ padding: 12, fontFamily: "Arial, sans-serif", maxWidth: 1020 }}>
@@ -163,7 +206,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
               alt="Malta Gym Solutions logo"
               style={{ width: 150, height: "auto", objectFit: "contain" }}
             />
-            <div>MT32531436</div>
+            <div>{companyVatNumber}</div>
             <div>Phone: +356 7954 9541</div>
             <div>@maltagymsolutions</div>
             <div>maltagymsolutions.com</div>
@@ -173,7 +216,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
             <div style={{ fontSize: 34, fontWeight: 300, letterSpacing: "0.01em", lineHeight: 1 }}>
               QUOTE
             </div>
-            <div>Date: {quote.date_issued}</div>
+            <div>Date: {formatDisplayDate(quote.date_issued)}</div>
             <div>Quote No: {quote.quote_number}</div>
           </div>
         </div>

@@ -6,11 +6,36 @@ import {
   Image,
   StyleSheet,
 } from "@react-pdf/renderer";
+import { formatDisplayDate } from "@/src/lib/format-date";
 
 type QuotePdfProps = {
-  quote: any;
-  client: any;
-  items: any[];
+  quote: {
+    date_issued: string;
+    quote_number: string;
+    vat_rate: number | string;
+    discount_amount_incl_vat?: number | string | null;
+    deposit_percent: number | string;
+    notes?: string | null;
+  };
+  client: {
+    is_business_client?: boolean | null;
+    company_name?: string | null;
+    private_name?: string | null;
+    contact_person?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    vat_number?: string | null;
+    address?: string | null;
+  } | null;
+  items: {
+    id?: string | number | null;
+    name: string;
+    sale_price_incl_vat: number | string;
+    qty: number | string;
+  }[];
+  companySettings?: {
+    vat_number?: string | null;
+  } | null;
 };
 
 function round2(value: number) {
@@ -149,8 +174,9 @@ const styles = StyleSheet.create({
     },
   });
 
-export default function QuotePdf({ quote, client, items }: QuotePdfProps) {
+export default function QuotePdf({ quote, client, items, companySettings }: QuotePdfProps) {
   const isBusinessClient = !!client?.is_business_client;
+  const companyVatNumber = companySettings?.vat_number || "MT32755725";
 
   const grossBeforeDiscount = round2(
     items.reduce(
@@ -189,7 +215,7 @@ export default function QuotePdf({ quote, client, items }: QuotePdfProps) {
                 src={`${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/mgs-logo.png`}
                 style={{ width: 120, height: 52, marginBottom: 6, alignSelf: "flex-start" }}
               />
-              <Text>MT32531436</Text>
+              <Text>{companyVatNumber}</Text>
               <Text>Phone: +356 7954 9541</Text>
               <Text>@maltagymsolutions</Text>
               <Text>maltagymsolutions.com</Text>
@@ -197,7 +223,7 @@ export default function QuotePdf({ quote, client, items }: QuotePdfProps) {
 
             <View style={styles.titleBlock}>
               <Text style={styles.title}>QUOTE</Text>
-              <Text>Date: {quote.date_issued}</Text>
+              <Text>Date: {formatDisplayDate(quote.date_issued)}</Text>
               <Text>Quote No: {quote.quote_number}</Text>
             </View>
           </View>

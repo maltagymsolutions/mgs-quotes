@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { formatDisplayDate } from "@/src/lib/format-date";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Client = {
@@ -1210,7 +1211,7 @@ export default function QuotesPage() {
                 <tr key={quote.id}>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{quote.quote_number}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{getClientName(quote.client_id)}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{quote.date_issued}</td>
+                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{formatDisplayDate(quote.date_issued)}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{quote.status}</td>
                  
                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>

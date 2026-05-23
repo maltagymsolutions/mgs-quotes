@@ -2,6 +2,7 @@ import React from "react";
 import { NextResponse } from "next/server";
 import { renderToStream } from "@react-pdf/renderer";
 import InvoicePdf from "@/src/pdf/InvoicePdf";
+import { buildDocumentPdfFilename, contentDispositionInline } from "@/src/lib/pdf-filename";
 import { createClient } from "@/src/lib/supabase-server";
 
 export async function GET(
@@ -32,18 +33,30 @@ export async function GET(
     .select("*")
     .eq("invoice_id", invoice.id);
 
+  const { data: companySettings } = await supabase
+    .from("company_settings")
+    .select("vat_number")
+    .limit(1)
+    .single();
+
  const pdfElement = React.createElement(InvoicePdf, {
     invoice,
     client,
     items: items || [],
-  }) as React.ReactElement<any>;
+    companySettings,
+  }) as React.ReactElement<never>;
   
   const stream = await renderToStream(pdfElement);
+  const filename = buildDocumentPdfFilename({
+    dateIssued: invoice.date_issued,
+    client,
+    documentNumber: invoice.invoice_number,
+  });
 
-  return new NextResponse(stream as any, {
+  return new NextResponse(stream as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="invoice-${invoice.invoice_number}.pdf"`,
+      "Content-Disposition": contentDispositionInline(filename),
     },
   });
 }

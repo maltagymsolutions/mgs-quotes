@@ -2,10 +2,52 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { formatDisplayDate } from "@/src/lib/format-date";
+import {
+  buildDefaultInvoicePaymentTerms,
+  DEFAULT_INVOICE_BANK_DETAILS,
+  DEFAULT_INVOICE_NOTES,
+  resolveCustomText,
+} from "@/src/lib/invoice-text";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type PageProps = {
   params: Promise<{ id: string }>;
+};
+
+type CompanySettings = {
+  vat_number: string | null;
+};
+
+type Client = {
+  is_business_client?: boolean | null;
+  company_name?: string | null;
+  private_name?: string | null;
+  contact_person?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  vat_number?: string | null;
+  address?: string | null;
+};
+
+type Invoice = {
+  id: string;
+  client_id: string;
+  date_issued: string;
+  invoice_number: string;
+  vat_rate: number | string;
+  discount_amount_incl_vat?: number | string | null;
+  deposit_percent: number | string;
+  payment_terms?: string | null;
+  bank_details?: string | null;
+  notes?: string | null;
+};
+
+type InvoiceItem = {
+  id: string;
+  name: string;
+  sale_price_incl_vat: number | string;
+  qty: number | string;
 };
 
 function round2(value: number) {
@@ -25,9 +67,10 @@ export default function InvoiceDetailPage({ params }: PageProps) {
   const supabase = createClient();
 
   const [invoiceId, setInvoiceId] = useState("");
-  const [invoice, setInvoice] = useState<any>(null);
-  const [client, setClient] = useState<any>(null);
-  const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [client, setClient] = useState<Client | null>(null);
+  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -69,8 +112,15 @@ export default function InvoiceDetailPage({ params }: PageProps) {
         .select("*")
         .eq("invoice_id", invoiceData.id);
 
+      const { data: companySettingsData } = await supabase
+        .from("company_settings")
+        .select("vat_number")
+        .limit(1)
+        .single();
+
       setClient(clientData || null);
       setInvoiceItems(itemsData || []);
+      setCompanySettings(companySettingsData || null);
       setLoading(false);
     }
 
@@ -123,6 +173,20 @@ export default function InvoiceDetailPage({ params }: PageProps) {
   );
   
   const balanceDue = round2(grossAfterDiscount - depositAmount);
+  const companyVatNumber = companySettings?.vat_number || "MT32755725";
+  const paymentTerms = resolveCustomText(
+    invoice.payment_terms,
+    buildDefaultInvoicePaymentTerms({
+      depositAmount,
+      balanceDue,
+      depositPercent: invoice.deposit_percent,
+      discountAmount,
+      invoiceNumber: invoice.invoice_number,
+      formatMoney: money,
+    })
+  );
+  const bankDetails = resolveCustomText(invoice.bank_details, DEFAULT_INVOICE_BANK_DETAILS);
+  const notesText = resolveCustomText(invoice.notes, DEFAULT_INVOICE_NOTES);
   return (
     <main
       className="document-shell"
@@ -178,7 +242,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
               alt="Malta Gym Solutions logo"
               style={{ width: 150, height: "auto", objectFit: "contain" }}
             />
-            <div>MT32531436</div>
+            <div>{companyVatNumber}</div>
             <div>Phone: +356 7954 9541</div>
             <div>@maltagymsolutions</div>
             <div>maltagymsolutions.com</div>
@@ -203,7 +267,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
             >
               INVOICE
             </div>
-            <div>Date: {invoice.date_issued}</div>
+            <div>Date: {formatDisplayDate(invoice.date_issued)}</div>
             <div>Invoice No: {invoice.invoice_number}</div>
           </div>
         </div>
@@ -481,33 +545,17 @@ export default function InvoiceDetailPage({ params }: PageProps) {
 
         <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
             <div style={{ fontWeight: 700 }}>PAYMENT TERMS</div>
-            <div>Deposit required: {money(depositAmount)} ({invoice.deposit_percent}% of total after discount).</div>
-            <div>Balance due on delivery: {money(balanceDue)}.</div>
-            {discountAmount > 0 ? <div>Discount applied: {money(discountAmount)}.</div> : null}
-            <div>Transfer the deposit quoting invoice number {invoice.invoice_number} as reference.</div>
+            <div style={{ whiteSpace: "pre-line" }}>{paymentTerms}</div>
           </div>
 
           <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
             <div style={{ fontWeight: 700 }}>BANK DETAILS:</div>
-            <div>Beneficiary: Luke Galea</div>
-            <div>IBAN: LT59 3250 0534 4337 4796</div>
-            <div>SWIFT/BIC: REVOLT21</div>
-            <div>
-              Beneficiary address: Zircon Crt, Blk A, Flt 7, Triq il-Ħmistax ta' Awissu,
-              Qrendi, Malta
-            </div>
-            <div>
-              Bank Name and Address: Revolut Bank UAB, Konstitucijos ave. 21B, 08130,
-              Vilnius, Lithuania.
-            </div>
+            <div style={{ whiteSpace: "pre-line" }}>{bankDetails}</div>
           </div>
 
           <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
             <div style={{ fontWeight: 700 }}>Notes:</div>
-            <div>
-              {invoice.notes ||
-                "All prices include delivery and installation at ground-floor level within Malta. If access conditions require the use of a lifting platform, crane, or similar equipment, any associated costs shall be borne in full by the purchaser."}
-            </div>
+            <div style={{ whiteSpace: "pre-line" }}>{notesText}</div>
             <div>Thank you for choosing Malta Gym Solutions!</div>
           </div>
         </div>

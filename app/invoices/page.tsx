@@ -2,6 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { formatDisplayDate } from "@/src/lib/format-date";
+import {
+  buildDefaultInvoicePaymentTerms,
+  DEFAULT_INVOICE_BANK_DETAILS,
+  DEFAULT_INVOICE_NOTES,
+  resolveCustomText,
+} from "@/src/lib/invoice-text";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Client = {
@@ -38,6 +45,8 @@ type SavedInvoice = {
   deposit_percent: number;
   shipping_cost_incl_vat: number | null;
   discount_amount_incl_vat: number | null;
+  payment_terms: string | null;
+  bank_details: string | null;
   notes: string | null;
 };
 
@@ -79,8 +88,6 @@ function buildInvoiceNumber(prefix: string, nextNumber: number) {
   return `${prefix}-${year}-${nextNumber}`;
 }
 
-const DEFAULT_NOTES = "Price includes ground floor delivery and installation";
-
 export default function InvoicesPage() {
   const supabase = createClient();
 
@@ -96,7 +103,9 @@ export default function InvoicesPage() {
   const [depositPercent, setDepositPercent] = useState(50);
   const [shippingCostInclVat, setShippingCostInclVat] = useState(0);
   const [discountAmountInclVat, setDiscountAmountInclVat] = useState(0);
-  const [notes, setNotes] = useState(DEFAULT_NOTES);
+  const [paymentTerms, setPaymentTerms] = useState<string | null>(null);
+  const [bankDetails, setBankDetails] = useState<string | null>(null);
+  const [notes, setNotes] = useState(DEFAULT_INVOICE_NOTES);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemDraft[]>([]);
   const [selectedInventoryId, setSelectedInventoryId] = useState("");
   const [inventorySearchTerm, setInventorySearchTerm] = useState("");
@@ -181,7 +190,9 @@ export default function InvoicesPage() {
     setDepositPercent(50);
     setShippingCostInclVat(0);
     setDiscountAmountInclVat(0);
-    setNotes(DEFAULT_NOTES);
+    setPaymentTerms(null);
+    setBankDetails(null);
+    setNotes(DEFAULT_INVOICE_NOTES);
     setInvoiceItems([]);
     setSelectedInventoryId("");
     setInventorySearchTerm("");
@@ -217,7 +228,9 @@ export default function InvoicesPage() {
     setDepositPercent(Number(invoice.deposit_percent));
     setShippingCostInclVat(Number(invoice.shipping_cost_incl_vat || 0));
     setDiscountAmountInclVat(Number(invoice.discount_amount_incl_vat || 0));
-    setNotes(invoice.notes || DEFAULT_NOTES);
+    setPaymentTerms(invoice.payment_terms || null);
+    setBankDetails(invoice.bank_details || null);
+    setNotes(invoice.notes || DEFAULT_INVOICE_NOTES);
     setInvoiceItems(draftItems);
     setSelectedInventoryId("");
     setMessage(`Editing ${invoice.invoice_number}`);
@@ -365,6 +378,29 @@ export default function InvoicesPage() {
     return items;
   }, [inventory, inventorySearchTerm, inventoryCategoryFilter, inventorySortBy]);
 
+  const draftInvoiceNumber = editingInvoiceId
+    ? savedInvoices.find((invoice) => invoice.id === editingInvoiceId)?.invoice_number || "this invoice"
+    : companySettings
+      ? buildInvoiceNumber(companySettings.invoice_prefix, companySettings.next_invoice_number)
+      : "this invoice";
+
+  const defaultPaymentTerms = buildDefaultInvoicePaymentTerms({
+    depositAmount: totals.depositAmount,
+    balanceDue: round2(totals.grossTotal - totals.depositAmount),
+    depositPercent,
+    discountAmount: totals.discountApplied,
+    invoiceNumber: draftInvoiceNumber,
+    formatMoney: money,
+  });
+
+  const displayedPaymentTerms = paymentTerms ?? defaultPaymentTerms;
+  const displayedBankDetails = bankDetails ?? DEFAULT_INVOICE_BANK_DETAILS;
+
+  function normalizeOptionalCustomText(value: string, defaultValue: string) {
+    const normalizedValue = value.trim();
+    return normalizedValue && normalizedValue !== defaultValue ? normalizedValue : null;
+  }
+
   async function saveInvoice() {
     if (!companySettings && !editingInvoiceId) {
       setMessage("Company settings not loaded.");
@@ -392,6 +428,8 @@ export default function InvoicesPage() {
           deposit_percent: depositPercent,
           shipping_cost_incl_vat: shippingCostInclVat,
           discount_amount_incl_vat: discountAmountInclVat,
+          payment_terms: normalizeOptionalCustomText(displayedPaymentTerms, defaultPaymentTerms),
+          bank_details: normalizeOptionalCustomText(displayedBankDetails, DEFAULT_INVOICE_BANK_DETAILS),
           notes: notes || null,
         })
         .eq("id", editingInvoiceId);
@@ -451,6 +489,8 @@ export default function InvoicesPage() {
         deposit_percent: depositPercent,
         shipping_cost_incl_vat: shippingCostInclVat,
         discount_amount_incl_vat: discountAmountInclVat,
+        payment_terms: normalizeOptionalCustomText(displayedPaymentTerms, defaultPaymentTerms),
+        bank_details: normalizeOptionalCustomText(displayedBankDetails, DEFAULT_INVOICE_BANK_DETAILS),
         notes: notes || null,
         status: "Unpaid",
       })
@@ -599,6 +639,22 @@ export default function InvoicesPage() {
               type="number"
               value={discountAmountInclVat}
               onChange={(e) => setDiscountAmountInclVat(Number(e.target.value || 0))}
+            />
+          </div>
+          <div>
+            <label>Payment Terms</label>
+            <textarea
+              style={{ width: "100%", padding: 10, marginTop: 4, minHeight: 92 }}
+              value={displayedPaymentTerms}
+              onChange={(e) => setPaymentTerms(e.target.value)}
+            />
+          </div>
+          <div>
+            <label>Bank Details</label>
+            <textarea
+              style={{ width: "100%", padding: 10, marginTop: 4, minHeight: 82 }}
+              value={displayedBankDetails}
+              onChange={(e) => setBankDetails(e.target.value)}
             />
           </div>
           <div>
@@ -932,7 +988,7 @@ export default function InvoicesPage() {
                 <tr key={invoice.id}>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{invoice.invoice_number}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{getClientName(invoice.client_id)}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{invoice.date_issued}</td>
+                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{formatDisplayDate(invoice.date_issued)}</td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                     <select
                       value={invoice.status}

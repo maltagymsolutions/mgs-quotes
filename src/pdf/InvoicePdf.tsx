@@ -6,11 +6,45 @@ import {
   Image,
   StyleSheet,
 } from "@react-pdf/renderer";
+import { formatDisplayDate } from "@/src/lib/format-date";
+import {
+  buildDefaultInvoicePaymentTerms,
+  DEFAULT_INVOICE_BANK_DETAILS,
+  DEFAULT_INVOICE_NOTES,
+  resolveCustomText,
+  splitTextLines,
+} from "@/src/lib/invoice-text";
 
 type InvoicePdfProps = {
-  invoice: any;
-  client: any;
-  items: any[];
+  invoice: {
+    date_issued: string;
+    invoice_number: string;
+    vat_rate: number | string;
+    discount_amount_incl_vat?: number | string | null;
+    deposit_percent: number | string;
+    payment_terms?: string | null;
+    bank_details?: string | null;
+    notes?: string | null;
+  };
+  client: {
+    is_business_client?: boolean | null;
+    company_name?: string | null;
+    private_name?: string | null;
+    contact_person?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    vat_number?: string | null;
+    address?: string | null;
+  } | null;
+  items: {
+    id?: string | number | null;
+    name: string;
+    sale_price_incl_vat: number | string;
+    qty: number | string;
+  }[];
+  companySettings?: {
+    vat_number?: string | null;
+  } | null;
 };
 
 function round2(value: number) {
@@ -68,8 +102,9 @@ const styles = StyleSheet.create({
   bold: { fontWeight: 700 },
 });
 
-export default function InvoicePdf({ invoice, client, items }: InvoicePdfProps) {
+export default function InvoicePdf({ invoice, client, items, companySettings }: InvoicePdfProps) {
   const isBusinessClient = !!client?.is_business_client;
+  const companyVatNumber = companySettings?.vat_number || "MT32755725";
 
   const grossBeforeDiscount = round2(
     items.reduce(
@@ -94,6 +129,19 @@ export default function InvoicePdf({ invoice, client, items }: InvoicePdfProps) 
   
   const depositAmount = round2(grossAfterDiscount * (Number(invoice.deposit_percent) / 100));
   const balanceDue = round2(grossAfterDiscount - depositAmount);
+  const paymentTerms = resolveCustomText(
+    invoice.payment_terms,
+    buildDefaultInvoicePaymentTerms({
+      depositAmount,
+      balanceDue,
+      depositPercent: invoice.deposit_percent,
+      discountAmount,
+      invoiceNumber: invoice.invoice_number,
+      formatMoney: money,
+    })
+  );
+  const bankDetails = resolveCustomText(invoice.bank_details, DEFAULT_INVOICE_BANK_DETAILS);
+  const notesText = resolveCustomText(invoice.notes, DEFAULT_INVOICE_NOTES);
 
   return (
     <Document>
@@ -105,7 +153,7 @@ export default function InvoicePdf({ invoice, client, items }: InvoicePdfProps) 
                 src={`${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/mgs-logo.png`}
                 style={{ width: 120, height: 52, marginBottom: 6, alignSelf: "flex-start" }}
               />
-              <Text>MT32531436</Text>
+              <Text>{companyVatNumber}</Text>
               <Text>Phone: +356 7954 9541</Text>
               <Text>@maltagymsolutions</Text>
               <Text>maltagymsolutions.com</Text>
@@ -113,7 +161,7 @@ export default function InvoicePdf({ invoice, client, items }: InvoicePdfProps) 
 
             <View style={styles.titleBlock}>
               <Text style={styles.title}>INVOICE</Text>
-              <Text>Date: {invoice.date_issued}</Text>
+              <Text>Date: {formatDisplayDate(invoice.date_issued)}</Text>
               <Text>Invoice No: {invoice.invoice_number}</Text>
             </View>
           </View>
@@ -213,25 +261,23 @@ export default function InvoicePdf({ invoice, client, items }: InvoicePdfProps) 
 
             <View style={styles.section}>
               <Text style={styles.bold}>PAYMENT TERMS</Text>
-              <Text>Deposit required: {money(depositAmount)} ({invoice.deposit_percent}% of total after discount).</Text>
-              <Text>Balance due on delivery: {money(balanceDue)}.</Text>
-              {discountAmount > 0 ? <Text>Discount applied: {money(discountAmount)}.</Text> : null}
-              <Text>Transfer the deposit quoting invoice number {invoice.invoice_number} as reference.</Text>
+              {splitTextLines(paymentTerms).map((line, index) => (
+                <Text key={`${line}-${index}`}>{line}</Text>
+              ))}
             </View>
 
             <View style={styles.section}>
               <Text style={styles.bold}>BANK DETAILS:</Text>
-              <Text>Beneficiary: Luke Galea</Text>
-              <Text>IBAN: LT59 3250 0534 4337 4796</Text>
-              <Text>SWIFT/BIC: REVOLT21</Text>
+              {splitTextLines(bankDetails).map((line, index) => (
+                <Text key={`${line}-${index}`}>{line}</Text>
+              ))}
             </View>
 
             <View style={styles.section}>
               <Text style={styles.bold}>Notes:</Text>
-              <Text>
-                {invoice.notes ||
-                  "All prices include delivery and installation at ground-floor level within Malta."}
-              </Text>
+              {splitTextLines(notesText).map((line, index) => (
+                <Text key={`${line}-${index}`}>{line}</Text>
+              ))}
               <Text>Thank you for choosing Malta Gym Solutions!</Text>
             </View>
           </View>
