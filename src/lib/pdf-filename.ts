@@ -34,6 +34,25 @@ export function buildDocumentPdfFilename({
   return `${datePart} - MGS - ${clientName} - ${numberPart}.pdf`;
 }
 
+export function buildReceiptPdfFilename({
+  receiptDate,
+  client,
+  receiptLabel,
+}: {
+  receiptDate: string | null | undefined;
+  client: ClientNameSource;
+  receiptLabel: string;
+}) {
+  const datePart = formatFilenameDate(receiptDate);
+  const clientName = sanitizeFilenamePart(
+    client?.company_name || client?.private_name,
+    "Client"
+  );
+  const labelPart = sanitizeFilenamePart(receiptLabel, "Payment Receipt");
+
+  return `${datePart} - MGS - ${clientName} - ${labelPart} Receipt.pdf`;
+}
+
 export function contentDispositionInline(filename: string) {
   const asciiFilename = filename.replace(/[^\x20-\x7E]/g, "");
 

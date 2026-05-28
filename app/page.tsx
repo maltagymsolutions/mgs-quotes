@@ -61,6 +61,12 @@ const cards = [
     cta: "Open Invoices",
   },
   {
+    title: "Payment Receipts",
+    description: "Issue deposit and balance payment receipts from saved invoices.",
+    href: "/receipts",
+    cta: "Open Receipts",
+  },
+  {
     title: "Expenses",
     description: "Record supplier costs, expense categories, and VAT paid on business purchases.",
     href: "/expenses",
