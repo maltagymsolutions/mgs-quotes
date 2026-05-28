@@ -7,7 +7,7 @@ import {
   buildDefaultInvoicePaymentTerms,
   DEFAULT_INVOICE_BANK_DETAILS,
   DEFAULT_INVOICE_NOTES,
-  resolveCustomText,
+  resolveInvoiceBankDetails,
 } from "@/src/lib/invoice-text";
 import { createClient } from "@/src/lib/supabase-browser";
 
@@ -394,7 +394,7 @@ export default function InvoicesPage() {
   });
 
   const displayedPaymentTerms = paymentTerms ?? defaultPaymentTerms;
-  const displayedBankDetails = bankDetails ?? DEFAULT_INVOICE_BANK_DETAILS;
+  const displayedBankDetails = resolveInvoiceBankDetails(bankDetails);
 
   function normalizeOptionalCustomText(value: string, defaultValue: string) {
     const normalizedValue = value.trim();

@@ -1,4 +1,12 @@
 export const DEFAULT_INVOICE_BANK_DETAILS = [
+  "Beneficiary: Robert Mallia",
+  "IBAN: LT40 3250 0052 3177 6799",
+  "BIC / SWIFT code: REVOLT21",
+  "Bank Name and Address: Revolut Bank UAB",
+  "Konstitucijos ave. 21B, 08130, Vilnius, Lithuania",
+].join("\n");
+
+const LEGACY_INVOICE_BANK_DETAILS = [
   "Beneficiary: Luke Galea",
   "IBAN: LT59 3250 0534 4337 4796",
   "SWIFT/BIC: REVOLT21",
@@ -46,4 +54,14 @@ export function resolveCustomText(
   defaultText: string
 ) {
   return customText?.trim() ? customText : defaultText;
+}
+
+export function resolveInvoiceBankDetails(customText: string | null | undefined) {
+  const normalizedText = customText?.trim();
+
+  if (!normalizedText || normalizedText === LEGACY_INVOICE_BANK_DETAILS) {
+    return DEFAULT_INVOICE_BANK_DETAILS;
+  }
+
+  return normalizedText;
 }

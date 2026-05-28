@@ -5,9 +5,9 @@ import { useEffect, useState } from "react";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
   buildDefaultInvoicePaymentTerms,
-  DEFAULT_INVOICE_BANK_DETAILS,
   DEFAULT_INVOICE_NOTES,
   resolveCustomText,
+  resolveInvoiceBankDetails,
 } from "@/src/lib/invoice-text";
 import { createClient } from "@/src/lib/supabase-browser";
 
@@ -185,7 +185,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
       formatMoney: money,
     })
   );
-  const bankDetails = resolveCustomText(invoice.bank_details, DEFAULT_INVOICE_BANK_DETAILS);
+  const bankDetails = resolveInvoiceBankDetails(invoice.bank_details);
   const notesText = resolveCustomText(invoice.notes, DEFAULT_INVOICE_NOTES);
   return (
     <main

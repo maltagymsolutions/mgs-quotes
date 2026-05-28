@@ -9,9 +9,9 @@ import {
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
   buildDefaultInvoicePaymentTerms,
-  DEFAULT_INVOICE_BANK_DETAILS,
   DEFAULT_INVOICE_NOTES,
   resolveCustomText,
+  resolveInvoiceBankDetails,
   splitTextLines,
 } from "@/src/lib/invoice-text";
 
@@ -140,7 +140,7 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
       formatMoney: money,
     })
   );
-  const bankDetails = resolveCustomText(invoice.bank_details, DEFAULT_INVOICE_BANK_DETAILS);
+  const bankDetails = resolveInvoiceBankDetails(invoice.bank_details);
   const notesText = resolveCustomText(invoice.notes, DEFAULT_INVOICE_NOTES);
 
   return (
