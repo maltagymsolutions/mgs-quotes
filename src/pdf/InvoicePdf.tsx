@@ -223,16 +223,14 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
               
               {discountAmount > 0 ? (
                 <View style={styles.footerRow}>
-                  <Text style={styles.footerLabel}>Discount incl. VAT</Text>
+                  <Text style={styles.footerLabel}>Discount</Text>
                   <Text style={styles.footerValue}>-{money(discountAmount)}</Text>
                 </View>
               ) : null}
               
               <View style={styles.footerRow}>
                 <Text style={styles.footerLabel}>
-                  {discountAmount > 0
-                    ? `VAT ${Number(invoice.vat_rate).toFixed(2)}% on discounted amount`
-                    : `VAT ${Number(invoice.vat_rate).toFixed(2)}%`}
+                  VAT {Number(invoice.vat_rate).toFixed(2)}%
                 </Text>
                 <Text style={styles.footerValue}>{money(vatAmount)}</Text>
               </View>

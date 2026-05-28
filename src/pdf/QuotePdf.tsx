@@ -285,16 +285,14 @@ export default function QuotePdf({ quote, client, items, companySettings }: Quot
               
               {discountAmount > 0 ? (
                 <View style={styles.footerRow}>
-                  <Text style={styles.footerLabel}>Discount incl. VAT</Text>
+                  <Text style={styles.footerLabel}>Discount</Text>
                   <Text style={styles.footerValue}>-{money(discountAmount)}</Text>
                 </View>
               ) : null}
               
               <View style={styles.footerRow}>
- <Text style={styles.footerLabel}>
-                  {discountAmount > 0
-                    ? `VAT ${Number(quote.vat_rate).toFixed(2)}% on discounted amount`
-                    : `VAT ${Number(quote.vat_rate).toFixed(2)}%`}
+                <Text style={styles.footerLabel}>
+                  VAT {Number(quote.vat_rate).toFixed(2)}%
                 </Text>
                 <Text style={styles.footerValue}>{money(vatAmount)}</Text>
               </View>
