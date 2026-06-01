@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BANK_ACCOUNTS,
+  BankAccount,
+  DEFAULT_BANK_ACCOUNT,
+  resolveBankAccount,
+} from "@/src/lib/bank-accounts";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
   calculateInvoiceReceiptTotals,
@@ -40,11 +46,12 @@ type PaymentReceipt = {
   receipt_type: PaymentReceiptType;
   receipt_date: string;
   amount_paid: number;
+  bank_account: BankAccount | null;
   created_at: string;
 };
 
 const RECEIPTS_SETUP_MESSAGE =
-  "Payment receipts table is not set up yet. Run supabase/migrations/003_create_payment_receipts.sql in Supabase, then refresh this page.";
+  "Payment receipts table is not set up yet. Run supabase/migrations/003_create_payment_receipts.sql and 004_add_bank_accounts_to_money_records.sql in Supabase, then refresh this page.";
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
@@ -79,6 +86,11 @@ export default function PaymentReceiptsPage() {
     receiptType: PaymentReceiptType;
     value: number;
   } | null>(null);
+  const [bankAccountOverride, setBankAccountOverride] = useState<{
+    invoiceId: string;
+    receiptType: PaymentReceiptType;
+    value: BankAccount;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
 
   const loadData = useCallback(async function loadData() {
@@ -87,7 +99,6 @@ export default function PaymentReceiptsPage() {
       supabase
         .from("invoices")
         .select("id, invoice_number, client_id, date_issued, status, deposit_percent, discount_amount_incl_vat")
-        .neq("status", "Archived")
         .order("date_issued", { ascending: false }),
       supabase.from("invoice_items").select("invoice_id, qty, sale_price_incl_vat"),
       supabase
@@ -218,6 +229,14 @@ export default function PaymentReceiptsPage() {
             })
           : 0;
 
+  const bankAccount =
+    bankAccountOverride?.invoiceId === selectedInvoiceId &&
+    bankAccountOverride.receiptType === receiptType
+      ? bankAccountOverride.value
+      : selectedReceipt
+        ? resolveBankAccount(selectedReceipt.bank_account)
+        : DEFAULT_BANK_ACCOUNT;
+
   function updateReceiptDate(value: string) {
     if (!selectedInvoiceId) return;
     setReceiptDateOverride({ invoiceId: selectedInvoiceId, receiptType, value });
@@ -228,9 +247,57 @@ export default function PaymentReceiptsPage() {
     setAmountPaidOverride({ invoiceId: selectedInvoiceId, receiptType, value });
   }
 
+  function updateBankAccount(value: BankAccount) {
+    if (!selectedInvoiceId) return;
+    setBankAccountOverride({ invoiceId: selectedInvoiceId, receiptType, value });
+  }
+
   function getClientName(clientId: string | null) {
     const client = clients.find((row) => row.id === clientId);
     return client?.company_name || client?.private_name || "Unknown client";
+  }
+
+  function clearReceiptEditor() {
+    setSelectedInvoiceId("");
+    setReceiptType("deposit");
+    setReceiptDateOverride(null);
+    setAmountPaidOverride(null);
+    setBankAccountOverride(null);
+  }
+
+  function startEditingReceipt(receipt: PaymentReceipt) {
+    const invoice = invoices.find((row) => row.id === receipt.invoice_id);
+
+    if (!invoice) {
+      setMessage("This receipt cannot be edited because its invoice could not be loaded.");
+      return;
+    }
+
+    setSelectedInvoiceId(receipt.invoice_id);
+    setReceiptType(receipt.receipt_type);
+    setReceiptDateOverride({
+      invoiceId: receipt.invoice_id,
+      receiptType: receipt.receipt_type,
+      value: receipt.receipt_date,
+    });
+    setAmountPaidOverride({
+      invoiceId: receipt.invoice_id,
+      receiptType: receipt.receipt_type,
+      value: Number(receipt.amount_paid || 0),
+    });
+    setBankAccountOverride({
+      invoiceId: receipt.invoice_id,
+      receiptType: receipt.receipt_type,
+      value: resolveBankAccount(receipt.bank_account),
+    });
+    setMessage(`Editing ${PAYMENT_RECEIPT_TYPE_LABELS[receipt.receipt_type]} receipt.`);
+
+    window.requestAnimationFrame(() => {
+      document.getElementById("receipt-editor")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
   }
 
   async function saveReceipt() {
@@ -254,6 +321,7 @@ export default function PaymentReceiptsPage() {
       receipt_type: receiptType,
       receipt_date: receiptDate,
       amount_paid: normalizedAmount,
+      bank_account: bankAccount,
     };
 
     const receiptResult = selectedReceipt
@@ -279,8 +347,7 @@ export default function PaymentReceiptsPage() {
     }
 
     await loadData();
-    setAmountPaidOverride(null);
-    setReceiptDateOverride(null);
+    clearReceiptEditor();
     setSaving(false);
     setMessage(`${PAYMENT_RECEIPT_TYPE_LABELS[receiptType]} receipt saved.`);
   }
@@ -316,8 +383,11 @@ export default function PaymentReceiptsPage() {
         </p>
       ) : null}
 
-      <section style={{ border: "1px solid #ccc", padding: 16, borderRadius: 8, marginTop: 20 }}>
-        <h2>Create Receipt</h2>
+      <section
+        id="receipt-editor"
+        style={{ border: "1px solid #ccc", padding: 16, borderRadius: 8, marginTop: 20 }}
+      >
+        <h2>{selectedReceipt ? "Edit Receipt" : "Create Receipt"}</h2>
 
         <div style={{ display: "grid", gap: 14 }}>
           <div>
@@ -369,6 +439,21 @@ export default function PaymentReceiptsPage() {
               onChange={(event) => updateAmountPaid(Number(event.target.value || 0))}
             />
           </div>
+
+          <div>
+            <label>Received In</label>
+            <select
+              style={{ width: "100%", padding: 10, marginTop: 4 }}
+              value={bankAccount}
+              onChange={(event) => updateBankAccount(event.target.value as BankAccount)}
+            >
+              {BANK_ACCOUNTS.map((account) => (
+                <option key={account} value={account}>
+                  {account}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {selectedInvoice && selectedTotals ? (
@@ -404,7 +489,7 @@ export default function PaymentReceiptsPage() {
           </div>
         ) : null}
 
-        <div style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button
             onClick={saveReceipt}
             disabled={saving || !selectedInvoiceId}
@@ -418,6 +503,20 @@ export default function PaymentReceiptsPage() {
           >
             {selectedReceipt ? "Update Receipt" : "Create Receipt"}
           </button>
+          {selectedReceipt ? (
+            <button
+              onClick={clearReceiptEditor}
+              style={{
+                padding: "10px 14px",
+                background: "#ffffff",
+                color: "#111827",
+                border: "1px solid #d1d5db",
+                borderRadius: 8,
+              }}
+            >
+              Cancel
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -434,6 +533,7 @@ export default function PaymentReceiptsPage() {
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Type</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Invoice</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Client</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Received In</th>
                 <th style={{ textAlign: "right", borderBottom: "1px solid #ccc", padding: 8 }}>Paid</th>
                 <th style={{ textAlign: "right", borderBottom: "1px solid #ccc", padding: 8 }}>Still Owing</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Actions</th>
@@ -454,6 +554,9 @@ export default function PaymentReceiptsPage() {
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                     {getClientName(invoice?.client_id || null)}
                   </td>
+                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                    {resolveBankAccount(receipt.bank_account)}
+                  </td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                     {money(Number(receipt.amount_paid || 0))}
                   </td>
@@ -462,6 +565,19 @@ export default function PaymentReceiptsPage() {
                   </td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => startEditingReceipt(receipt)}
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: 8,
+                          border: "1px solid #d1d5db",
+                          background: "#ffffff",
+                          color: "#111827",
+                          fontWeight: 700,
+                        }}
+                      >
+                        Edit
+                      </button>
                       <Link
                         href={`/receipts/${receipt.id}`}
                         style={{

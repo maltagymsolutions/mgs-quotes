@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BANK_ACCOUNTS,
+  BankAccount,
+  DEFAULT_BANK_ACCOUNT,
+  resolveBankAccount,
+} from "@/src/lib/bank-accounts";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type UserInfo = {
@@ -17,6 +23,7 @@ type Expense = {
   category: ExpenseCategory;
   vat_rate: number;
   amount_incl_vat: number;
+  bank_account: BankAccount | null;
 };
 
 type ExpenseCategory = "Equipment" | "Transport" | "Professional fees" | "Tax" | "Shipping";
@@ -32,7 +39,7 @@ const EXPENSE_CATEGORIES: ExpenseCategory[] = [
 const VAT_RATES = [0, 5, 7, 18] as const;
 
 const EXPENSES_SETUP_MESSAGE =
-  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql in Supabase, then refresh this page.";
+  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql and 004_add_bank_accounts_to_money_records.sql in Supabase, then refresh this page.";
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -72,7 +79,9 @@ export default function ExpensesPage() {
   const [category, setCategory] = useState<ExpenseCategory>("Equipment");
   const [vatRate, setVatRate] = useState(18);
   const [amountInclVat, setAmountInclVat] = useState("");
+  const [bankAccount, setBankAccount] = useState<BankAccount>(DEFAULT_BANK_ACCOUNT);
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [accountFilter, setAccountFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
 
   const loadExpenses = useCallback(async function loadExpenses() {
@@ -136,6 +145,7 @@ export default function ExpensesPage() {
     setCategory("Equipment");
     setVatRate(18);
     setAmountInclVat("");
+    setBankAccount(DEFAULT_BANK_ACCOUNT);
   }
 
   function startEditing(expense: Expense) {
@@ -146,6 +156,7 @@ export default function ExpensesPage() {
     setCategory(expense.category);
     setVatRate(Number(expense.vat_rate));
     setAmountInclVat(String(expense.amount_incl_vat ?? ""));
+    setBankAccount(resolveBankAccount(expense.bank_account));
   }
 
   async function saveExpense() {
@@ -168,6 +179,7 @@ export default function ExpensesPage() {
       category,
       vat_rate: vatRate,
       amount_incl_vat: Number(amountInclVat || 0),
+      bank_account: bankAccount,
     };
 
     const { error } = editingExpenseId
@@ -217,18 +229,23 @@ export default function ExpensesPage() {
       rows = rows.filter((expense) => expense.category === categoryFilter);
     }
 
+    if (accountFilter !== "All") {
+      rows = rows.filter((expense) => resolveBankAccount(expense.bank_account) === accountFilter);
+    }
+
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       rows = rows.filter(
         (expense) =>
           expense.description.toLowerCase().includes(q) ||
           (expense.supplier || "").toLowerCase().includes(q) ||
-          expense.category.toLowerCase().includes(q)
+          expense.category.toLowerCase().includes(q) ||
+          resolveBankAccount(expense.bank_account).toLowerCase().includes(q)
       );
     }
 
     return rows;
-  }, [expenses, categoryFilter, searchTerm]);
+  }, [expenses, accountFilter, categoryFilter, searchTerm]);
 
   const summary = useMemo(() => {
     return expenses.reduce(
@@ -374,6 +391,21 @@ export default function ExpensesPage() {
                 onChange={(e) => setAmountInclVat(e.target.value)}
               />
             </div>
+
+            <div>
+              <label>Paid From</label>
+              <select
+                style={{ width: "100%", padding: 12, marginTop: 6 }}
+                value={bankAccount}
+                onChange={(e) => setBankAccount(e.target.value as BankAccount)}
+              >
+                {BANK_ACCOUNTS.map((account) => (
+                  <option key={account} value={account}>
+                    {account}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div
@@ -494,6 +526,22 @@ export default function ExpensesPage() {
               ))}
             </select>
           </div>
+
+          <div>
+            <label>Account</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={accountFilter}
+              onChange={(e) => setAccountFilter(e.target.value)}
+            >
+              <option value="All">All accounts</option>
+              {BANK_ACCOUNTS.map((account) => (
+                <option key={account} value={account}>
+                  {account}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {filteredExpenses.length === 0 ? (
@@ -516,6 +564,7 @@ export default function ExpensesPage() {
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Supplier</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Description</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Category</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Paid From</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>VAT %</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Excl. VAT</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>VAT</th>
@@ -537,6 +586,9 @@ export default function ExpensesPage() {
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.supplier || "-"}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.description}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.category}</td>
+                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                        {resolveBankAccount(expense.bank_account)}
+                      </td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, textAlign: "right" }}>
                         {Number(expense.vat_rate)}%
                       </td>

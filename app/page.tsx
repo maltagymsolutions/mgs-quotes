@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BANK_ACCOUNTS, BankAccount, resolveBankAccount } from "@/src/lib/bank-accounts";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Invoice = {
@@ -25,6 +26,14 @@ type Expense = {
   category: string;
   vat_rate: number;
   amount_incl_vat: number;
+  bank_account: BankAccount | null;
+};
+
+type PaymentReceipt = {
+  id: string;
+  receipt_date: string;
+  amount_paid: number;
+  bank_account: BankAccount | null;
 };
 
 type BreakdownRow = {
@@ -33,7 +42,9 @@ type BreakdownRow = {
 };
 
 const EXPENSES_SETUP_MESSAGE =
-  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql in Supabase, then refresh this page.";
+  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql and 004_add_bank_accounts_to_money_records.sql in Supabase, then refresh this page.";
+const RECEIPTS_SETUP_MESSAGE =
+  "Payment receipts table is not set up yet. Run supabase/migrations/003_create_payment_receipts.sql and 004_add_bank_accounts_to_money_records.sql in Supabase, then refresh this page.";
 
 const cards = [
   {
@@ -100,10 +111,11 @@ export default function HomePage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [paymentReceipts, setPaymentReceipts] = useState<PaymentReceipt[]>([]);
   const [dashboardMessage, setDashboardMessage] = useState("");
 
   const loadDashboard = useCallback(async function loadDashboard() {
-    const [invoicesResult, invoiceItemsResult, expensesResult] = await Promise.all([
+    const [invoicesResult, invoiceItemsResult, expensesResult, receiptsResult] = await Promise.all([
       supabase
         .from("invoices")
         .select("id, date_issued, status, vat_rate, discount_amount_incl_vat")
@@ -111,8 +123,12 @@ export default function HomePage() {
       supabase.from("invoice_items").select("invoice_id, qty, sale_price_incl_vat"),
       supabase
         .from("expenses")
-        .select("id, expense_date, category, vat_rate, amount_incl_vat")
+        .select("id, expense_date, category, vat_rate, amount_incl_vat, bank_account")
         .order("expense_date", { ascending: false }),
+      supabase
+        .from("payment_receipts")
+        .select("id, receipt_date, amount_paid, bank_account")
+        .order("receipt_date", { ascending: false }),
     ]);
 
     if (invoicesResult.error) {
@@ -135,6 +151,14 @@ export default function HomePage() {
     }
 
     setExpenses(expensesResult.data || []);
+
+    if (receiptsResult.error) {
+      setPaymentReceipts([]);
+      setDashboardMessage(RECEIPTS_SETUP_MESSAGE);
+      return;
+    }
+
+    setPaymentReceipts(receiptsResult.data || []);
     setDashboardMessage("");
   }, [supabase]);
 
@@ -157,6 +181,11 @@ export default function HomePage() {
 
     const statusTotals = new Map<string, number>();
     const monthlyIncomeTotals = new Map<string, number>();
+    const accountTotals = new Map<BankAccount, { income: number; expenses: number }>();
+
+    BANK_ACCOUNTS.forEach((account) => {
+      accountTotals.set(account, { income: 0, expenses: 0 });
+    });
 
     let totalIncome = 0;
     let incomeVat = 0;
@@ -188,8 +217,21 @@ export default function HomePage() {
     let totalExpenses = 0;
     let expenseVat = 0;
 
+    paymentReceipts.forEach((receipt) => {
+      const account = resolveBankAccount(receipt.bank_account);
+      const totals = accountTotals.get(account) || { income: 0, expenses: 0 };
+      totals.income = round2(totals.income + Number(receipt.amount_paid || 0));
+      accountTotals.set(account, totals);
+    });
+
     expenses.forEach((expense) => {
       const amount = Number(expense.amount_incl_vat || 0);
+      const account = resolveBankAccount(expense.bank_account);
+      const totals = accountTotals.get(account) || { income: 0, expenses: 0 };
+
+      totals.expenses = round2(totals.expenses + amount);
+      accountTotals.set(account, totals);
+
       totalExpenses = round2(totalExpenses + amount);
       expenseVat = round2(expenseVat + calculateVatFromInclusive(amount, Number(expense.vat_rate || 0)));
 
@@ -214,6 +256,16 @@ export default function HomePage() {
       incomeVat,
       expenseVat,
       vatBalance: round2(incomeVat - expenseVat),
+      accountBalances: BANK_ACCOUNTS.map((account) => {
+        const totals = accountTotals.get(account) || { income: 0, expenses: 0 };
+
+        return {
+          account,
+          income: totals.income,
+          expenses: totals.expenses,
+          balance: round2(totals.income - totals.expenses),
+        };
+      }),
       statusBreakdown: sortBreakdown(
         Array.from(statusTotals.entries()).map(([label, amount]) => ({ label, amount }))
       ),
@@ -226,7 +278,7 @@ export default function HomePage() {
         expenses: monthlyExpenseTotals.get(month) || 0,
       })),
     };
-  }, [expenses, invoiceItems, invoices]);
+  }, [expenses, invoiceItems, invoices, paymentReceipts]);
 
   return (
     <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1180 }}>
@@ -358,6 +410,38 @@ export default function HomePage() {
               <strong style={{ fontSize: 22 }}>{money(Number(amount))}</strong>
             </div>
           ))}
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <h3 style={{ marginBottom: 12 }}>Account Balances</h3>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
+              gap: 14,
+            }}
+          >
+            {dashboard.accountBalances.map((row) => (
+              <div
+                key={row.account}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 12,
+                  padding: 16,
+                  background: "#ffffff",
+                }}
+              >
+                <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 8 }}>{row.account}</div>
+                <strong style={{ display: "block", fontSize: 22, marginBottom: 10 }}>
+                  {money(row.balance)}
+                </strong>
+                <div style={{ display: "grid", gap: 4, color: "#6b7280", fontSize: 13 }}>
+                  <span>Received: {money(row.income)}</span>
+                  <span>Sent: {money(row.expenses)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div
