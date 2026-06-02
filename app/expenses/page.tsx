@@ -2,12 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  BANK_ACCOUNTS,
-  BankAccount,
-  DEFAULT_BANK_ACCOUNT,
-  resolveBankAccount,
-} from "@/src/lib/bank-accounts";
+import { buildCsv, downloadCsv } from "@/src/lib/csv";
+import { DEFAULT_OWNER, Owner, OWNERS, resolveOwner, resolveOwnerSplit } from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type UserInfo = {
@@ -23,23 +19,25 @@ type Expense = {
   category: ExpenseCategory;
   vat_rate: number;
   amount_incl_vat: number;
-  bank_account: BankAccount | null;
+  bank_account?: Owner | null;
+  paid_by_owner: Owner | null;
+  split_owners: Owner[] | null;
 };
 
-type ExpenseCategory = "Equipment" | "Transport" | "Professional fees" | "Tax" | "Shipping";
+type ExpenseCategory = "Equipment" | "Professional fees" | "Tax" | "Shipping" | "VAT";
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "Equipment",
-  "Transport",
   "Professional fees",
   "Tax",
   "Shipping",
+  "VAT",
 ];
 
 const VAT_RATES = [0, 5, 7, 18] as const;
 
 const EXPENSES_SETUP_MESSAGE =
-  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql and 004_add_bank_accounts_to_money_records.sql in Supabase, then refresh this page.";
+  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql, 004_add_bank_accounts_to_money_records.sql, 005_adapt_money_records_to_owners.sql, and 006_add_vat_expense_category.sql in Supabase, then refresh this page.";
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -65,6 +63,10 @@ function calculateExpense(amountInclVat: number, vatRate: number) {
   return { amountExclVat, vatAmount };
 }
 
+function exportFilename(prefix: string) {
+  return `${prefix}-${new Date().toISOString().slice(0, 10)}.csv`;
+}
+
 export default function ExpensesPage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -79,9 +81,10 @@ export default function ExpensesPage() {
   const [category, setCategory] = useState<ExpenseCategory>("Equipment");
   const [vatRate, setVatRate] = useState(18);
   const [amountInclVat, setAmountInclVat] = useState("");
-  const [bankAccount, setBankAccount] = useState<BankAccount>(DEFAULT_BANK_ACCOUNT);
+  const [paidByOwner, setPaidByOwner] = useState<Owner>(DEFAULT_OWNER);
+  const [splitOwners, setSplitOwners] = useState<Owner[]>([DEFAULT_OWNER]);
   const [categoryFilter, setCategoryFilter] = useState("All");
-  const [accountFilter, setAccountFilter] = useState("All");
+  const [ownerFilter, setOwnerFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
 
   const loadExpenses = useCallback(async function loadExpenses() {
@@ -145,10 +148,13 @@ export default function ExpensesPage() {
     setCategory("Equipment");
     setVatRate(18);
     setAmountInclVat("");
-    setBankAccount(DEFAULT_BANK_ACCOUNT);
+    setPaidByOwner(DEFAULT_OWNER);
+    setSplitOwners([DEFAULT_OWNER]);
   }
 
   function startEditing(expense: Expense) {
+    const owner = resolveOwner(expense.paid_by_owner || expense.bank_account);
+
     setEditingExpenseId(expense.id);
     setExpenseDate(expense.expense_date);
     setSupplier(expense.supplier || "");
@@ -156,7 +162,25 @@ export default function ExpensesPage() {
     setCategory(expense.category);
     setVatRate(Number(expense.vat_rate));
     setAmountInclVat(String(expense.amount_incl_vat ?? ""));
-    setBankAccount(resolveBankAccount(expense.bank_account));
+    setPaidByOwner(owner);
+    setSplitOwners(resolveOwnerSplit(expense.split_owners, owner));
+  }
+
+  function updatePaidByOwner(owner: Owner) {
+    setPaidByOwner(owner);
+    setSplitOwners((currentOwners) =>
+      currentOwners.length === 1 ? [owner] : currentOwners.includes(owner) ? currentOwners : [owner, ...currentOwners]
+    );
+  }
+
+  function toggleSplitOwner(owner: Owner) {
+    setSplitOwners((currentOwners) => {
+      if (currentOwners.includes(owner)) {
+        return currentOwners.length === 1 ? currentOwners : currentOwners.filter((row) => row !== owner);
+      }
+
+      return [...currentOwners, owner];
+    });
   }
 
   async function saveExpense() {
@@ -170,16 +194,26 @@ export default function ExpensesPage() {
       return;
     }
 
+    if (splitOwners.length === 0) {
+      setMessage("Choose at least one owner to split this expense.");
+      return;
+    }
+
     setMessage(editingExpenseId ? "Updating expense..." : "Saving expense...");
+
+    const normalizedSplitOwners = Array.from(new Set([paidByOwner, ...splitOwners]));
+    const normalizedVatRate = category === "VAT" ? 0 : vatRate;
 
     const payload = {
       expense_date: expenseDate,
       supplier: supplier || null,
       description,
       category,
-      vat_rate: vatRate,
+      vat_rate: normalizedVatRate,
       amount_incl_vat: Number(amountInclVat || 0),
-      bank_account: bankAccount,
+      bank_account: paidByOwner,
+      paid_by_owner: paidByOwner,
+      split_owners: normalizedSplitOwners,
     };
 
     const { error } = editingExpenseId
@@ -229,8 +263,13 @@ export default function ExpensesPage() {
       rows = rows.filter((expense) => expense.category === categoryFilter);
     }
 
-    if (accountFilter !== "All") {
-      rows = rows.filter((expense) => resolveBankAccount(expense.bank_account) === accountFilter);
+    if (ownerFilter !== "All") {
+      rows = rows.filter((expense) => {
+        const paidBy = resolveOwner(expense.paid_by_owner || expense.bank_account);
+        const splitBetween = resolveOwnerSplit(expense.split_owners, paidBy);
+
+        return paidBy === ownerFilter || splitBetween.includes(ownerFilter as Owner);
+      });
     }
 
     if (searchTerm.trim()) {
@@ -240,12 +279,16 @@ export default function ExpensesPage() {
           expense.description.toLowerCase().includes(q) ||
           (expense.supplier || "").toLowerCase().includes(q) ||
           expense.category.toLowerCase().includes(q) ||
-          resolveBankAccount(expense.bank_account).toLowerCase().includes(q)
+          resolveOwner(expense.paid_by_owner || expense.bank_account).toLowerCase().includes(q) ||
+          resolveOwnerSplit(expense.split_owners, resolveOwner(expense.paid_by_owner || expense.bank_account))
+            .join(" ")
+            .toLowerCase()
+            .includes(q)
       );
     }
 
     return rows;
-  }, [expenses, accountFilter, categoryFilter, searchTerm]);
+  }, [expenses, ownerFilter, categoryFilter, searchTerm]);
 
   const summary = useMemo(() => {
     return expenses.reduce(
@@ -262,6 +305,53 @@ export default function ExpensesPage() {
       { amountInclVat: 0, amountExclVat: 0, vatAmount: 0 }
     );
   }, [expenses]);
+
+  function exportExpensesCsv() {
+    if (filteredExpenses.length === 0) {
+      setMessage("No expenses to export.");
+      return;
+    }
+
+    const headers = [
+      "Date",
+      "Supplier",
+      "Description",
+      "Category",
+      "Paid By",
+      "Split Between",
+      "VAT %",
+      "Amount Excl. VAT",
+      "VAT Amount",
+      "Amount Incl. VAT",
+      "Created At",
+    ];
+
+    const rows = filteredExpenses.map((expense) => {
+      const paidBy = resolveOwner(expense.paid_by_owner || expense.bank_account);
+      const splitBetween = resolveOwnerSplit(expense.split_owners, paidBy);
+      const calculated = calculateExpense(
+        Number(expense.amount_incl_vat || 0),
+        Number(expense.vat_rate || 0)
+      );
+
+      return {
+        "Date": expense.expense_date,
+        "Supplier": expense.supplier || "",
+        "Description": expense.description,
+        "Category": expense.category,
+        "Paid By": paidBy,
+        "Split Between": splitBetween.join("; "),
+        "VAT %": Number(expense.vat_rate || 0),
+        "Amount Excl. VAT": calculated.amountExclVat.toFixed(2),
+        "VAT Amount": calculated.vatAmount.toFixed(2),
+        "Amount Incl. VAT": Number(expense.amount_incl_vat || 0).toFixed(2),
+        "Created At": expense.created_at,
+      };
+    });
+
+    downloadCsv(exportFilename("mgs-expenses"), buildCsv(headers, rows));
+    setMessage(`Exported ${filteredExpenses.length} expense(s).`);
+  }
 
   return (
     <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1180 }}>
@@ -355,7 +445,13 @@ export default function ExpensesPage() {
               <select
                 style={{ width: "100%", padding: 12, marginTop: 6 }}
                 value={category}
-                onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
+                onChange={(e) => {
+                  const nextCategory = e.target.value as ExpenseCategory;
+                  setCategory(nextCategory);
+                  if (nextCategory === "VAT") {
+                    setVatRate(0);
+                  }
+                }}
               >
                 {EXPENSE_CATEGORIES.map((expenseCategory) => (
                   <option key={expenseCategory} value={expenseCategory}>
@@ -393,18 +489,53 @@ export default function ExpensesPage() {
             </div>
 
             <div>
-              <label>Paid From</label>
+              <label>Paid By</label>
               <select
                 style={{ width: "100%", padding: 12, marginTop: 6 }}
-                value={bankAccount}
-                onChange={(e) => setBankAccount(e.target.value as BankAccount)}
+                value={paidByOwner}
+                onChange={(e) => updatePaidByOwner(e.target.value as Owner)}
               >
-                {BANK_ACCOUNTS.map((account) => (
-                  <option key={account} value={account}>
-                    {account}
+                {OWNERS.map((owner) => (
+                  <option key={owner} value={owner}>
+                    {owner}
                   </option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          <div>
+              <label>Split Between</label>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 8,
+              }}
+            >
+              {OWNERS.map((owner) => (
+                <label
+                  key={owner}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    border: "1px solid #d1d5db",
+                    borderRadius: 8,
+                    padding: "9px 11px",
+                    background: splitOwners.includes(owner) ? "#f3f4f6" : "#ffffff",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={splitOwners.includes(owner)}
+                    disabled={owner === paidByOwner}
+                    onChange={() => toggleSplitOwner(owner)}
+                  />
+                  {owner}
+                </label>
+              ))}
             </div>
           </div>
 
@@ -430,6 +561,10 @@ export default function ExpensesPage() {
             <div>
               <div style={{ color: "#6b7280", fontSize: 13 }}>Total</div>
               <strong>{money(Number(amountInclVat || 0))}</strong>
+            </div>
+            <div>
+              <div style={{ color: "#6b7280", fontSize: 13 }}>Split share</div>
+              <strong>{money(Number(amountInclVat || 0) / splitOwners.length)}</strong>
             </div>
           </div>
 
@@ -469,6 +604,20 @@ export default function ExpensesPage() {
             <h2 style={{ marginBottom: 6 }}>Expense List</h2>
             <p style={{ margin: 0, color: "#6b7280" }}>{expenses.length} expense(s)</p>
           </div>
+
+          <button
+            onClick={exportExpensesCsv}
+            style={{
+              padding: "10px 14px",
+              background: "#111827",
+              color: "#ffffff",
+              border: "1px solid #111827",
+              borderRadius: 8,
+              fontWeight: 700,
+            }}
+          >
+            Export CSV
+          </button>
 
           <div
             style={{
@@ -528,16 +677,16 @@ export default function ExpensesPage() {
           </div>
 
           <div>
-            <label>Account</label>
+            <label>Owner</label>
             <select
               style={{ width: "100%", padding: 12, marginTop: 6 }}
-              value={accountFilter}
-              onChange={(e) => setAccountFilter(e.target.value)}
+              value={ownerFilter}
+              onChange={(e) => setOwnerFilter(e.target.value)}
             >
-              <option value="All">All accounts</option>
-              {BANK_ACCOUNTS.map((account) => (
-                <option key={account} value={account}>
-                  {account}
+              <option value="All">All owners</option>
+              {OWNERS.map((owner) => (
+                <option key={owner} value={owner}>
+                  {owner}
                 </option>
               ))}
             </select>
@@ -564,7 +713,8 @@ export default function ExpensesPage() {
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Supplier</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Description</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Category</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Paid From</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Paid By</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Split Between</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>VAT %</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Excl. VAT</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>VAT</th>
@@ -579,6 +729,8 @@ export default function ExpensesPage() {
                     Number(expense.amount_incl_vat || 0),
                     Number(expense.vat_rate || 0)
                   );
+                  const paidBy = resolveOwner(expense.paid_by_owner || expense.bank_account);
+                  const splitBetween = resolveOwnerSplit(expense.split_owners, paidBy);
 
                   return (
                     <tr key={expense.id}>
@@ -587,7 +739,10 @@ export default function ExpensesPage() {
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.description}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.category}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
-                        {resolveBankAccount(expense.bank_account)}
+                        {paidBy}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                        {splitBetween.join(", ")}
                       </td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, textAlign: "right" }}>
                         {Number(expense.vat_rate)}%

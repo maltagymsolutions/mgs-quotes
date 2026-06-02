@@ -2,12 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  BANK_ACCOUNTS,
-  BankAccount,
-  DEFAULT_BANK_ACCOUNT,
-  resolveBankAccount,
-} from "@/src/lib/bank-accounts";
+import { DEFAULT_OWNER, Owner, OWNERS, resolveOwner } from "@/src/lib/owners";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
   calculateInvoiceReceiptTotals,
@@ -46,12 +41,13 @@ type PaymentReceipt = {
   receipt_type: PaymentReceiptType;
   receipt_date: string;
   amount_paid: number;
-  bank_account: BankAccount | null;
+  bank_account?: Owner | null;
+  received_by_owner: Owner | null;
   created_at: string;
 };
 
 const RECEIPTS_SETUP_MESSAGE =
-  "Payment receipts table is not set up yet. Run supabase/migrations/003_create_payment_receipts.sql and 004_add_bank_accounts_to_money_records.sql in Supabase, then refresh this page.";
+  "Payment receipts table is not set up yet. Run supabase/migrations/003_create_payment_receipts.sql, 004_add_bank_accounts_to_money_records.sql, and 005_adapt_money_records_to_owners.sql in Supabase, then refresh this page.";
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
@@ -86,10 +82,10 @@ export default function PaymentReceiptsPage() {
     receiptType: PaymentReceiptType;
     value: number;
   } | null>(null);
-  const [bankAccountOverride, setBankAccountOverride] = useState<{
+  const [receivedByOverride, setReceivedByOverride] = useState<{
     invoiceId: string;
     receiptType: PaymentReceiptType;
-    value: BankAccount;
+    value: Owner;
   } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -229,13 +225,13 @@ export default function PaymentReceiptsPage() {
             })
           : 0;
 
-  const bankAccount =
-    bankAccountOverride?.invoiceId === selectedInvoiceId &&
-    bankAccountOverride.receiptType === receiptType
-      ? bankAccountOverride.value
+  const receivedByOwner =
+    receivedByOverride?.invoiceId === selectedInvoiceId &&
+    receivedByOverride.receiptType === receiptType
+      ? receivedByOverride.value
       : selectedReceipt
-        ? resolveBankAccount(selectedReceipt.bank_account)
-        : DEFAULT_BANK_ACCOUNT;
+        ? resolveOwner(selectedReceipt.received_by_owner || selectedReceipt.bank_account)
+        : DEFAULT_OWNER;
 
   function updateReceiptDate(value: string) {
     if (!selectedInvoiceId) return;
@@ -247,9 +243,9 @@ export default function PaymentReceiptsPage() {
     setAmountPaidOverride({ invoiceId: selectedInvoiceId, receiptType, value });
   }
 
-  function updateBankAccount(value: BankAccount) {
+  function updateReceivedByOwner(value: Owner) {
     if (!selectedInvoiceId) return;
-    setBankAccountOverride({ invoiceId: selectedInvoiceId, receiptType, value });
+    setReceivedByOverride({ invoiceId: selectedInvoiceId, receiptType, value });
   }
 
   function getClientName(clientId: string | null) {
@@ -262,7 +258,7 @@ export default function PaymentReceiptsPage() {
     setReceiptType("deposit");
     setReceiptDateOverride(null);
     setAmountPaidOverride(null);
-    setBankAccountOverride(null);
+    setReceivedByOverride(null);
   }
 
   function startEditingReceipt(receipt: PaymentReceipt) {
@@ -285,10 +281,10 @@ export default function PaymentReceiptsPage() {
       receiptType: receipt.receipt_type,
       value: Number(receipt.amount_paid || 0),
     });
-    setBankAccountOverride({
+    setReceivedByOverride({
       invoiceId: receipt.invoice_id,
       receiptType: receipt.receipt_type,
-      value: resolveBankAccount(receipt.bank_account),
+      value: resolveOwner(receipt.received_by_owner || receipt.bank_account),
     });
     setMessage(`Editing ${PAYMENT_RECEIPT_TYPE_LABELS[receipt.receipt_type]} receipt.`);
 
@@ -321,7 +317,8 @@ export default function PaymentReceiptsPage() {
       receipt_type: receiptType,
       receipt_date: receiptDate,
       amount_paid: normalizedAmount,
-      bank_account: bankAccount,
+      bank_account: receivedByOwner,
+      received_by_owner: receivedByOwner,
     };
 
     const receiptResult = selectedReceipt
@@ -441,15 +438,15 @@ export default function PaymentReceiptsPage() {
           </div>
 
           <div>
-            <label>Received In</label>
+            <label>Received By</label>
             <select
               style={{ width: "100%", padding: 10, marginTop: 4 }}
-              value={bankAccount}
-              onChange={(event) => updateBankAccount(event.target.value as BankAccount)}
+              value={receivedByOwner}
+              onChange={(event) => updateReceivedByOwner(event.target.value as Owner)}
             >
-              {BANK_ACCOUNTS.map((account) => (
-                <option key={account} value={account}>
-                  {account}
+              {OWNERS.map((owner) => (
+                <option key={owner} value={owner}>
+                  {owner}
                 </option>
               ))}
             </select>
@@ -533,7 +530,7 @@ export default function PaymentReceiptsPage() {
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Type</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Invoice</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Client</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Received In</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Received By</th>
                 <th style={{ textAlign: "right", borderBottom: "1px solid #ccc", padding: 8 }}>Paid</th>
                 <th style={{ textAlign: "right", borderBottom: "1px solid #ccc", padding: 8 }}>Still Owing</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Actions</th>
@@ -555,7 +552,7 @@ export default function PaymentReceiptsPage() {
                     {getClientName(invoice?.client_id || null)}
                   </td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {resolveBankAccount(receipt.bank_account)}
+                    {resolveOwner(receipt.received_by_owner || receipt.bank_account)}
                   </td>
                   <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
                     {money(Number(receipt.amount_paid || 0))}

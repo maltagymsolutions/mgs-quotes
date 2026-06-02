@@ -3,11 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BANK_ACCOUNTS, BankAccount, resolveBankAccount } from "@/src/lib/bank-accounts";
+import { buildCsv, downloadCsv } from "@/src/lib/csv";
+import { Owner, OWNERS, resolveOwner, resolveOwnerSplit } from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Invoice = {
   id: string;
+  invoice_number: string;
+  client_id: string | null;
   date_issued: string;
   status: string;
   vat_rate: number;
@@ -22,18 +25,46 @@ type InvoiceItem = {
 
 type Expense = {
   id: string;
+  created_at: string;
   expense_date: string;
+  supplier: string | null;
+  description: string;
   category: string;
   vat_rate: number;
   amount_incl_vat: number;
-  bank_account: BankAccount | null;
+  bank_account?: Owner | null;
+  paid_by_owner: Owner | null;
+  split_owners: Owner[] | null;
 };
 
 type PaymentReceipt = {
   id: string;
+  created_at: string;
+  invoice_id: string;
+  receipt_type: string;
   receipt_date: string;
   amount_paid: number;
-  bank_account: BankAccount | null;
+  bank_account?: Owner | null;
+  received_by_owner: Owner | null;
+};
+
+type Client = {
+  id: string;
+  private_name: string | null;
+  company_name: string | null;
+};
+
+type OwnerTransaction = {
+  date: string;
+  createdAt: string;
+  owner: Owner;
+  type: string;
+  counterparty: string;
+  reference: string;
+  description: string;
+  category: string;
+  amount: number;
+  balance: number;
 };
 
 type BreakdownRow = {
@@ -42,46 +73,34 @@ type BreakdownRow = {
 };
 
 const EXPENSES_SETUP_MESSAGE =
-  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql and 004_add_bank_accounts_to_money_records.sql in Supabase, then refresh this page.";
+  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql, 004_add_bank_accounts_to_money_records.sql, 005_adapt_money_records_to_owners.sql, and 006_add_vat_expense_category.sql in Supabase, then refresh this page.";
 const RECEIPTS_SETUP_MESSAGE =
-  "Payment receipts table is not set up yet. Run supabase/migrations/003_create_payment_receipts.sql and 004_add_bank_accounts_to_money_records.sql in Supabase, then refresh this page.";
+  "Payment receipts table is not set up yet. Run supabase/migrations/003_create_payment_receipts.sql, 004_add_bank_accounts_to_money_records.sql, and 005_adapt_money_records_to_owners.sql in Supabase, then refresh this page.";
 
 const cards = [
   {
     title: "Clients",
-    description: "Add and manage private and business clients used on your documents.",
     href: "/clients",
-    cta: "Open Clients",
   },
   {
     title: "Inventory",
-    description: "Maintain your catalogue, pricing, and CSV imports for products and equipment.",
     href: "/inventory",
-    cta: "Open Inventory",
   },
   {
     title: "Quotes",
-    description: "Create quotes, track internal profit, and convert approved quotes into invoices.",
     href: "/quotes",
-    cta: "Open Quotes",
   },
   {
     title: "Invoices",
-    description: "Create and edit invoices while keeping internal margin details separate from the client view.",
     href: "/invoices",
-    cta: "Open Invoices",
   },
   {
     title: "Payment Receipts",
-    description: "Issue deposit and balance payment receipts from saved invoices.",
     href: "/receipts",
-    cta: "Open Receipts",
   },
   {
     title: "Expenses",
-    description: "Record supplier costs, expense categories, and VAT paid on business purchases.",
     href: "/expenses",
-    cta: "Open Expenses",
   },
 ];
 
@@ -106,30 +125,41 @@ function sortBreakdown(rows: BreakdownRow[]) {
   return rows.sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
 }
 
+function exportFilename(prefix: string) {
+  return `${prefix}-${new Date().toISOString().slice(0, 10)}.csv`;
+}
+
 export default function HomePage() {
   const supabase = useMemo(() => createClient(), []);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [paymentReceipts, setPaymentReceipts] = useState<PaymentReceipt[]>([]);
   const [dashboardMessage, setDashboardMessage] = useState("");
 
   const loadDashboard = useCallback(async function loadDashboard() {
-    const [invoicesResult, invoiceItemsResult, expensesResult, receiptsResult] = await Promise.all([
+    const [clientsResult, invoicesResult, invoiceItemsResult, expensesResult, receiptsResult] = await Promise.all([
+      supabase.from("clients").select("id, private_name, company_name"),
       supabase
         .from("invoices")
-        .select("id, date_issued, status, vat_rate, discount_amount_incl_vat")
+        .select("id, invoice_number, client_id, date_issued, status, vat_rate, discount_amount_incl_vat")
         .order("date_issued", { ascending: false }),
       supabase.from("invoice_items").select("invoice_id, qty, sale_price_incl_vat"),
       supabase
         .from("expenses")
-        .select("id, expense_date, category, vat_rate, amount_incl_vat, bank_account")
+        .select("id, created_at, expense_date, supplier, description, category, vat_rate, amount_incl_vat, bank_account, paid_by_owner, split_owners")
         .order("expense_date", { ascending: false }),
       supabase
         .from("payment_receipts")
-        .select("id, receipt_date, amount_paid, bank_account")
+        .select("id, created_at, invoice_id, receipt_type, receipt_date, amount_paid, bank_account, received_by_owner")
         .order("receipt_date", { ascending: false }),
     ]);
+
+    if (clientsResult.error) {
+      setDashboardMessage(clientsResult.error.message);
+      return;
+    }
 
     if (invoicesResult.error) {
       setDashboardMessage(invoicesResult.error.message);
@@ -141,6 +171,7 @@ export default function HomePage() {
       return;
     }
 
+    setClients(clientsResult.data || []);
     setInvoices(invoicesResult.data || []);
     setInvoiceItems(invoiceItemsResult.data || []);
 
@@ -172,6 +203,9 @@ export default function HomePage() {
 
   const dashboard = useMemo(() => {
     const itemsByInvoice = new Map<string, InvoiceItem[]>();
+    const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+    const clientById = new Map(clients.map((client) => [client.id, client]));
+    const ownerTransactionRows: Omit<OwnerTransaction, "balance">[] = [];
 
     invoiceItems.forEach((item) => {
       const existing = itemsByInvoice.get(item.invoice_id) || [];
@@ -181,13 +215,27 @@ export default function HomePage() {
 
     const statusTotals = new Map<string, number>();
     const monthlyIncomeTotals = new Map<string, number>();
-    const accountTotals = new Map<BankAccount, { income: number; expenses: number }>();
+    const ownerTotals = new Map<
+      Owner,
+      {
+        customerReceived: number;
+        supplierPaid: number;
+        splitReceived: number;
+        splitPaid: number;
+      }
+    >();
 
-    BANK_ACCOUNTS.forEach((account) => {
-      accountTotals.set(account, { income: 0, expenses: 0 });
+    OWNERS.forEach((owner) => {
+      ownerTotals.set(owner, {
+        customerReceived: 0,
+        supplierPaid: 0,
+        splitReceived: 0,
+        splitPaid: 0,
+      });
     });
 
     let totalIncome = 0;
+    let totalIncomeExclVat = 0;
     let incomeVat = 0;
 
     invoices.forEach((invoice) => {
@@ -204,10 +252,14 @@ export default function HomePage() {
 
       if (invoice.status !== "Archived") {
         totalIncome = round2(totalIncome + invoiceTotal);
-        incomeVat = round2(incomeVat + calculateVatFromInclusive(invoiceTotal, Number(invoice.vat_rate || 0)));
+        const invoiceVat = calculateVatFromInclusive(invoiceTotal, Number(invoice.vat_rate || 0));
+        const invoiceExclVat = round2(invoiceTotal - invoiceVat);
+
+        totalIncomeExclVat = round2(totalIncomeExclVat + invoiceExclVat);
+        incomeVat = round2(incomeVat + invoiceVat);
 
         const month = invoice.date_issued?.slice(0, 7) || "Undated";
-        monthlyIncomeTotals.set(month, round2((monthlyIncomeTotals.get(month) || 0) + invoiceTotal));
+        monthlyIncomeTotals.set(month, round2((monthlyIncomeTotals.get(month) || 0) + invoiceExclVat));
       }
     });
 
@@ -215,25 +267,122 @@ export default function HomePage() {
     const monthlyExpenseTotals = new Map<string, number>();
 
     let totalExpenses = 0;
+    let totalExpensesExclVat = 0;
     let expenseVat = 0;
+    let vatPayments = 0;
 
     paymentReceipts.forEach((receipt) => {
-      const account = resolveBankAccount(receipt.bank_account);
-      const totals = accountTotals.get(account) || { income: 0, expenses: 0 };
-      totals.income = round2(totals.income + Number(receipt.amount_paid || 0));
-      accountTotals.set(account, totals);
+      const owner = resolveOwner(receipt.received_by_owner || receipt.bank_account);
+      const invoice = invoiceById.get(receipt.invoice_id);
+      const client = invoice?.client_id ? clientById.get(invoice.client_id) : null;
+      const clientName = client?.company_name || client?.private_name || "Customer";
+      const totals =
+        ownerTotals.get(owner) || {
+          customerReceived: 0,
+          supplierPaid: 0,
+          splitReceived: 0,
+          splitPaid: 0,
+        };
+
+      totals.customerReceived = round2(
+        totals.customerReceived + Number(receipt.amount_paid || 0)
+      );
+      ownerTotals.set(owner, totals);
+      ownerTransactionRows.push({
+        date: receipt.receipt_date,
+        createdAt: receipt.created_at,
+        owner,
+        type: "Customer receipt",
+        counterparty: clientName,
+        reference: invoice?.invoice_number || receipt.invoice_id,
+        description: receipt.receipt_type,
+        category: "Income",
+        amount: Number(receipt.amount_paid || 0),
+      });
     });
 
     expenses.forEach((expense) => {
       const amount = Number(expense.amount_incl_vat || 0);
-      const account = resolveBankAccount(expense.bank_account);
-      const totals = accountTotals.get(account) || { income: 0, expenses: 0 };
+      const isVatPayment = expense.category === "VAT";
+      const paidBy = resolveOwner(expense.paid_by_owner || expense.bank_account);
+      const splitBetween = Array.from(new Set([paidBy, ...resolveOwnerSplit(expense.split_owners, paidBy)]));
+      const paidTotals =
+        ownerTotals.get(paidBy) || {
+          customerReceived: 0,
+          supplierPaid: 0,
+          splitReceived: 0,
+          splitPaid: 0,
+        };
+      const ownerShare = round2(amount / splitBetween.length);
 
-      totals.expenses = round2(totals.expenses + amount);
-      accountTotals.set(account, totals);
+      paidTotals.supplierPaid = round2(paidTotals.supplierPaid + amount);
+      ownerTotals.set(paidBy, paidTotals);
+      ownerTransactionRows.push({
+        date: expense.expense_date,
+        createdAt: expense.created_at,
+        owner: paidBy,
+        type: isVatPayment ? "VAT payment" : "Supplier payment",
+        counterparty: expense.supplier || (isVatPayment ? "VAT department" : "Supplier"),
+        reference: expense.id,
+        description: expense.description,
+        category: expense.category,
+        amount: -amount,
+      });
+
+      splitBetween.forEach((owner) => {
+        if (owner === paidBy) return;
+
+        const totals =
+          ownerTotals.get(owner) || {
+            customerReceived: 0,
+            supplierPaid: 0,
+            splitReceived: 0,
+            splitPaid: 0,
+          };
+        const currentPaidTotals = ownerTotals.get(paidBy) || paidTotals;
+
+        totals.splitPaid = round2(totals.splitPaid + ownerShare);
+        currentPaidTotals.splitReceived = round2(currentPaidTotals.splitReceived + ownerShare);
+        ownerTotals.set(owner, totals);
+        ownerTotals.set(paidBy, currentPaidTotals);
+        ownerTransactionRows.push(
+          {
+            date: expense.expense_date,
+            createdAt: expense.created_at,
+            owner: paidBy,
+            type: "Split reimbursement received",
+            counterparty: owner,
+            reference: expense.id,
+            description: expense.description,
+            category: expense.category,
+            amount: ownerShare,
+          },
+          {
+            date: expense.expense_date,
+            createdAt: expense.created_at,
+            owner,
+            type: "Split reimbursement paid",
+            counterparty: paidBy,
+            reference: expense.id,
+            description: expense.description,
+            category: expense.category,
+            amount: -ownerShare,
+          }
+        );
+      });
 
       totalExpenses = round2(totalExpenses + amount);
-      expenseVat = round2(expenseVat + calculateVatFromInclusive(amount, Number(expense.vat_rate || 0)));
+      const expenseVatAmount = isVatPayment
+        ? 0
+        : calculateVatFromInclusive(amount, Number(expense.vat_rate || 0));
+      const expenseExclVat = round2(amount - expenseVatAmount);
+
+      if (isVatPayment) {
+        vatPayments = round2(vatPayments + amount);
+      } else {
+        totalExpensesExclVat = round2(totalExpensesExclVat + expenseExclVat);
+        expenseVat = round2(expenseVat + expenseVatAmount);
+      }
 
       expenseCategoryTotals.set(
         expense.category,
@@ -241,29 +390,62 @@ export default function HomePage() {
       );
 
       const month = expense.expense_date?.slice(0, 7) || "Undated";
-      monthlyExpenseTotals.set(month, round2((monthlyExpenseTotals.get(month) || 0) + amount));
+      if (!isVatPayment) {
+        monthlyExpenseTotals.set(month, round2((monthlyExpenseTotals.get(month) || 0) + expenseExclVat));
+      }
     });
 
     const months = Array.from(new Set([...monthlyIncomeTotals.keys(), ...monthlyExpenseTotals.keys()]))
       .sort()
       .reverse()
       .slice(0, 6);
+    const runningBalances = new Map<Owner, number>();
+    const ownerTransactions = ownerTransactionRows
+      .sort(
+        (a, b) =>
+          a.owner.localeCompare(b.owner) ||
+          a.date.localeCompare(b.date) ||
+          a.createdAt.localeCompare(b.createdAt) ||
+          a.type.localeCompare(b.type)
+      )
+      .map((row) => {
+        const balance = round2((runningBalances.get(row.owner) || 0) + row.amount);
+        runningBalances.set(row.owner, balance);
+
+        return { ...row, amount: round2(row.amount), balance };
+      });
 
     return {
       totalIncome,
       totalExpenses,
-      netTotal: round2(totalIncome - totalExpenses),
+      totalIncomeExclVat,
+      totalExpensesExclVat,
+      netTotal: round2(totalIncomeExclVat - totalExpensesExclVat),
       incomeVat,
       expenseVat,
-      vatBalance: round2(incomeVat - expenseVat),
-      accountBalances: BANK_ACCOUNTS.map((account) => {
-        const totals = accountTotals.get(account) || { income: 0, expenses: 0 };
+      vatPayments,
+      vatBalance: round2(incomeVat - expenseVat - vatPayments),
+      ownerTransactions,
+      ownerBalances: OWNERS.map((owner) => {
+        const totals =
+          ownerTotals.get(owner) || {
+            customerReceived: 0,
+            supplierPaid: 0,
+            splitReceived: 0,
+            splitPaid: 0,
+          };
+        const totalReceived = round2(totals.customerReceived + totals.splitReceived);
+        const totalPaid = round2(totals.supplierPaid + totals.splitPaid);
 
         return {
-          account,
-          income: totals.income,
-          expenses: totals.expenses,
-          balance: round2(totals.income - totals.expenses),
+          owner,
+          customerReceived: totals.customerReceived,
+          supplierPaid: totals.supplierPaid,
+          splitReceived: totals.splitReceived,
+          splitPaid: totals.splitPaid,
+          totalReceived,
+          totalPaid,
+          balance: round2(totalReceived - totalPaid),
         };
       }),
       statusBreakdown: sortBreakdown(
@@ -278,177 +460,274 @@ export default function HomePage() {
         expenses: monthlyExpenseTotals.get(month) || 0,
       })),
     };
-  }, [expenses, invoiceItems, invoices, paymentReceipts]);
+  }, [clients, expenses, invoiceItems, invoices, paymentReceipts]);
+
+  function exportOwnerTransactionsCsv() {
+    if (dashboard.ownerTransactions.length === 0) {
+      setDashboardMessage("No owner transactions to export.");
+      return;
+    }
+
+    const headers = [
+      "Owner",
+      "Date",
+      "Type",
+      "Counterparty",
+      "Reference",
+      "Description",
+      "Category",
+      "Amount",
+      "Running Balance",
+    ];
+    const rows = dashboard.ownerTransactions.map((transaction: OwnerTransaction) => ({
+      "Owner": transaction.owner,
+      "Date": transaction.date,
+      "Type": transaction.type,
+      "Counterparty": transaction.counterparty,
+      "Reference": transaction.reference,
+      "Description": transaction.description,
+      "Category": transaction.category,
+      "Amount": transaction.amount.toFixed(2),
+      "Running Balance": transaction.balance.toFixed(2),
+    }));
+
+    downloadCsv(exportFilename("mgs-owner-transactions"), buildCsv(headers, rows));
+    setDashboardMessage(`Exported ${dashboard.ownerTransactions.length} owner transaction(s).`);
+  }
 
   return (
-    <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1180 }}>
+    <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1280 }}>
       <section
         style={{
-          padding: 36,
-          borderRadius: 18,
+          padding: 18,
+          borderRadius: 12,
           background: "#ffffff",
           border: "1px solid #e5e7eb",
-          marginBottom: 24,
-          boxShadow: "0 8px 24px rgba(17, 24, 39, 0.05)",
+          marginBottom: 18,
         }}
       >
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))",
-            gap: 40,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 18,
             alignItems: "center",
+            flexWrap: "wrap",
           }}
         >
-          <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <Image
               src="/mgs-logo.svg"
               alt="Malta Gym Solutions"
-              width={150}
-              height={80}
+              width={118}
+              height={63}
               priority
-              style={{ width: "150px", height: "auto", display: "block" }}
+              style={{ width: 118, height: "auto", display: "block" }}
             />
-
-            <div
-              style={{
-                width: 56,
-                height: 3,
-                background: "#e10600",
-                marginTop: 22,
-                marginBottom: 18,
-                borderRadius: 999,
-              }}
-            />
-
-            <p
-              style={{
-                margin: 0,
-                color: "#6b7280",
-                fontSize: 14,
-                lineHeight: 1.6,
-                maxWidth: 180,
-              }}
-            >
-              Internal workspace for quotes, invoices, clients, inventory, and expenses.
-            </p>
+            <div>
+              <p
+                style={{
+                  margin: "0 0 4px 0",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "#6b7280",
+                }}
+              >
+                Admin Dashboard
+              </p>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 28,
+                  lineHeight: 1.1,
+                  color: "#111827",
+                  letterSpacing: 0,
+                }}
+              >
+                MGS Workspace
+              </h1>
+            </div>
           </div>
 
-          <div style={{ maxWidth: 720 }}>
-            <p
-              style={{
-                margin: "0 0 10px 0",
-                fontSize: 13,
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "#6b7280",
-              }}
-            >
-              Admin Dashboard
-            </p>
-
-            <h1
-              style={{
-                margin: "0 0 14px 0",
-                fontSize: "3.2rem",
-                lineHeight: 0.98,
-                color: "#111827",
-                letterSpacing: 0,
-              }}
-            >
-              Quote and Invoice Creator
-            </h1>
-
-            <p
-              style={{
-                margin: 0,
-                color: "#4b5563",
-                lineHeight: 1.65,
-                fontSize: 17,
-                maxWidth: 560,
-              }}
-            >
-              Create quotes, manage inventory, track income, and record expenses.
-            </p>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+            }}
+          >
+            {cards.map((card) => (
+              <Link
+                key={card.href}
+                href={card.href}
+                style={{
+                  padding: "9px 11px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#ffffff",
+                  color: "#111827",
+                  textDecoration: "none",
+                  fontWeight: 700,
+                  fontSize: 13,
+                }}
+              >
+                {card.title}
+              </Link>
+            ))}
           </div>
         </div>
       </section>
 
-      <section style={{ padding: 24, borderRadius: 16, marginBottom: 24 }}>
-        <div style={{ marginBottom: 22 }}>
-          <h2 style={{ marginBottom: 8 }}>Income and Expenses</h2>
-          <p style={{ margin: 0, color: "#6b7280" }}>
-            Totals exclude archived invoices and use amounts including VAT.
-          </p>
+      <section style={{ padding: 20, borderRadius: 12, marginBottom: 18 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <h2 style={{ margin: "0 0 6px 0" }}>Income and Expenses</h2>
+            <p style={{ margin: 0, color: "#6b7280" }}>
+              VAT-exclusive net with VAT payments deducted from the VAT balance.
+            </p>
+          </div>
         </div>
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
-            gap: 14,
-            marginBottom: 20,
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(190px, 100%), 1fr))",
+            gap: 12,
+            marginBottom: 18,
           }}
         >
           {[
-            ["Income", dashboard.totalIncome],
-            ["Expenses", dashboard.totalExpenses],
-            ["Net", dashboard.netTotal],
+            ["Income excl. VAT", dashboard.totalIncomeExclVat],
+            ["Expenses excl. VAT", dashboard.totalExpensesExclVat],
+            ["Net excl. VAT", dashboard.netTotal],
             ["VAT balance", dashboard.vatBalance],
           ].map(([label, amount]) => (
             <div
               key={label}
               style={{
                 border: "1px solid #e5e7eb",
-                borderRadius: 12,
-                padding: 16,
+                borderRadius: 8,
+                padding: 14,
                 background: "#f9fafb",
+                minHeight: 82,
               }}
             >
               <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 8 }}>{label}</div>
-              <strong style={{ fontSize: 22 }}>{money(Number(amount))}</strong>
+              <strong style={{ fontSize: 24 }}>{money(Number(amount))}</strong>
             </div>
           ))}
         </div>
 
-        <div style={{ marginBottom: 20 }}>
-          <h3 style={{ marginBottom: 12 }}>Account Balances</h3>
+        <div style={{ marginBottom: 18 }}>
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
-              gap: 14,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+              marginBottom: 10,
             }}
           >
-            {dashboard.accountBalances.map((row) => (
-              <div
-                key={row.account}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
-                  padding: 16,
-                  background: "#ffffff",
-                }}
-              >
-                <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 8 }}>{row.account}</div>
-                <strong style={{ display: "block", fontSize: 22, marginBottom: 10 }}>
-                  {money(row.balance)}
-                </strong>
-                <div style={{ display: "grid", gap: 4, color: "#6b7280", fontSize: 13 }}>
-                  <span>Received: {money(row.income)}</span>
-                  <span>Sent: {money(row.expenses)}</span>
-                </div>
-              </div>
-            ))}
+            <h3 style={{ margin: 0 }}>Owner Cash Balances</h3>
+            <button
+              onClick={exportOwnerTransactionsCsv}
+              style={{
+                padding: "9px 12px",
+                background: "#ffffff",
+                color: "#111827",
+                border: "1px solid #d1d5db",
+                borderRadius: 8,
+                fontWeight: 700,
+              }}
+            >
+              Export Owner Transactions CSV
+            </button>
+          </div>
+
+          <div
+            style={{
+              overflowX: "auto",
+              border: "1px solid #e5e7eb",
+              borderRadius: 8,
+              background: "#ffffff",
+            }}
+          >
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
+              <thead>
+                <tr>
+                  {["Owner", "Balance", "Customer received", "Supplier paid", "Split received", "Split paid"].map(
+                    (heading) => (
+                      <th
+                        key={heading}
+                        style={{
+                          textAlign: heading === "Owner" ? "left" : "right",
+                          padding: "10px 12px",
+                          borderBottom: "1px solid #e5e7eb",
+                          color: "#6b7280",
+                          fontSize: 13,
+                          background: "#f9fafb",
+                        }}
+                      >
+                        {heading}
+                      </th>
+                    )
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {dashboard.ownerBalances.map((row) => (
+                  <tr key={row.owner}>
+                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", fontWeight: 700 }}>
+                      {row.owner}
+                    </td>
+                    <td
+                      style={{
+                        padding: "12px",
+                        borderBottom: "1px solid #f1f5f9",
+                        textAlign: "right",
+                        fontWeight: 800,
+                        color: row.balance < 0 ? "#991b1b" : "#111827",
+                      }}
+                    >
+                      {money(row.balance)}
+                    </td>
+                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>
+                      {money(row.customerReceived)}
+                    </td>
+                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>
+                      {money(row.supplierPaid)}
+                    </td>
+                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>
+                      {money(row.splitReceived)}
+                    </td>
+                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>
+                      {money(row.splitPaid)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(260px, 100%), 1fr))",
-            gap: 18,
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))",
+            gap: 14,
           }}
         >
           <BreakdownPanel title="Income by Status" rows={dashboard.statusBreakdown} />
@@ -457,16 +736,16 @@ export default function HomePage() {
           <div
             style={{
               border: "1px solid #e5e7eb",
-              borderRadius: 12,
-              padding: 16,
+              borderRadius: 8,
+              padding: 14,
               background: "#ffffff",
             }}
           >
-            <h3 style={{ marginBottom: 12 }}>Monthly Breakdown</h3>
+            <h3 style={{ margin: "0 0 12px 0" }}>Monthly Breakdown</h3>
             {dashboard.monthlyBreakdown.length === 0 ? (
               <p style={{ margin: 0, color: "#6b7280" }}>No invoice or expense data yet.</p>
             ) : (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gap: 8 }}>
                 {dashboard.monthlyBreakdown.map((row) => (
                   <div
                     key={row.month}
@@ -476,12 +755,12 @@ export default function HomePage() {
                       gap: 10,
                       alignItems: "center",
                       borderBottom: "1px solid #f1f5f9",
-                      paddingBottom: 10,
+                      paddingBottom: 8,
                     }}
                   >
                     <strong>{row.month}</strong>
-                    <span style={{ color: "#065f46" }}>{money(row.income)}</span>
-                    <span style={{ color: "#991b1b" }}>{money(row.expenses)}</span>
+                    <span style={{ color: "#065f46", textAlign: "right" }}>{money(row.income)}</span>
+                    <span style={{ color: "#991b1b", textAlign: "right" }}>{money(row.expenses)}</span>
                   </div>
                 ))}
               </div>
@@ -497,7 +776,7 @@ export default function HomePage() {
               color: "#9a3412",
               border: "1px solid #fed7aa",
               padding: 12,
-              borderRadius: 12,
+              borderRadius: 8,
             }}
           >
             {dashboardMessage}
@@ -505,60 +784,6 @@ export default function HomePage() {
         ) : null}
       </section>
 
-      <section style={{ padding: 24, borderRadius: 16 }}>
-        <div style={{ marginBottom: 22 }}>
-          <h2 style={{ marginBottom: 8 }}>Choose a section</h2>
-          <p style={{ margin: 0, color: "#6b7280" }}>
-            Open the area you want to work on.
-          </p>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
-            gap: 18,
-          }}
-        >
-          {cards.map((card) => (
-            <div
-              key={card.href}
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: 16,
-                padding: 20,
-                background: "#ffffff",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                minHeight: 215,
-              }}
-            >
-              <div>
-                <h3 style={{ margin: "0 0 12px 0", fontSize: 18, color: "#111827" }}>{card.title}</h3>
-                <p style={{ margin: 0, color: "#4b5563", lineHeight: 1.6 }}>{card.description}</p>
-              </div>
-
-              <div style={{ marginTop: 20 }}>
-                <Link
-                  href={card.href}
-                  style={{
-                    display: "inline-block",
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    background: "#111827",
-                    color: "#ffffff",
-                    textDecoration: "none",
-                    fontWeight: 700,
-                  }}
-                >
-                  {card.cta}
-                </Link>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
     </main>
   );
 }
