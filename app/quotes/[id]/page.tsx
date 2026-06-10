@@ -171,7 +171,9 @@ export default function QuoteDetailPage({ params }: PageProps) {
         <Link href="/quotes">← Back to quotes</Link>
         <Link href="/">Dashboard</Link>
         <a
-          href={`/api/quotes/${quoteId}/pdf`}
+          href={`/api/quotes/${quoteId}/pdf?v=${encodeURIComponent(
+            `${quote.deposit_percent}-${quote.vat_rate}-${grossAfterDiscount}-${quoteItems.length}`
+          )}`}
           target="_blank"
           rel="noreferrer"
           style={{
@@ -433,8 +435,12 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
   <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
             <div style={{ fontWeight: 700 }}>PAYMENT TERMS</div>
-            <div>Deposit required: {quote.deposit_percent}% ({money(depositAmount)}) upon order.</div>
-            <div>Remaining balance payable on delivery.</div>
+            {Number(quote.deposit_percent) > 0 ? (
+              <>
+                <div>Deposit required: {quote.deposit_percent}% ({money(depositAmount)}) upon order.</div>
+                <div>Remaining balance payable on delivery.</div>
+              </>
+            ) : null}
             {discountAmount > 0 ? <div>Discount applied: {money(discountAmount)}.</div> : null}
             <div>Quote validity: 10 days from date of issue.</div>
           </div>

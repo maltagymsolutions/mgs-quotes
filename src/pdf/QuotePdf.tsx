@@ -309,8 +309,12 @@ export default function QuotePdf({ quote, client, items, companySettings }: Quot
 
             <View style={styles.section}>
               <Text style={styles.bold}>PAYMENT TERMS</Text>
-              <Text>Deposit required: {quote.deposit_percent}% ({money(depositAmount)}) upon order.</Text>
-              <Text>Remaining balance payable on delivery.</Text>
+              {Number(quote.deposit_percent) > 0 ? (
+                <>
+                  <Text>Deposit required: {quote.deposit_percent}% ({money(depositAmount)}) upon order.</Text>
+                  <Text>Remaining balance payable on delivery.</Text>
+                </>
+              ) : null}
               {discountAmount > 0 ? <Text>Discount applied: {money(discountAmount)}.</Text> : null}
               <Text>Quote validity: 10 days from date of issue.</Text>
             </View>

@@ -9,6 +9,7 @@ import {
   DEFAULT_INVOICE_NOTES,
   resolveInvoiceBankDetails,
 } from "@/src/lib/invoice-text";
+import { formatQuantitySaveError } from "@/src/lib/quantity-save-error";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Client = {
@@ -264,7 +265,7 @@ export default function InvoicesPage() {
 
   function updateQty(index: number, qty: number) {
     setInvoiceItems((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, qty: qty < 1 ? 1 : qty } : item))
+      prev.map((item, i) => (i === index ? { ...item, qty: qty < 0.01 ? 0.01 : qty } : item))
     );
   }
 
@@ -462,7 +463,7 @@ export default function InvoicesPage() {
       const { error: insertItemsError } = await supabase.from("invoice_items").insert(itemsToInsert);
 
       if (insertItemsError) {
-        setMessage(insertItemsError.message);
+        setMessage(formatQuantitySaveError(insertItemsError.message));
         return;
       }
 
@@ -515,7 +516,7 @@ export default function InvoicesPage() {
     const { error: itemsError } = await supabase.from("invoice_items").insert(itemsToInsert);
 
     if (itemsError) {
-      setMessage(itemsError.message);
+      setMessage(formatQuantitySaveError(itemsError.message));
       return;
     }
 
@@ -774,6 +775,8 @@ export default function InvoicesPage() {
                    <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                      <input
                        type="number"
+                       min="0.01"
+                       step="0.01"
                        value={item.qty}
                        onChange={(e) => updateQty(index, Number(e.target.value || 1))}
                        style={{ width: 90, padding: 10 }}
@@ -878,10 +881,12 @@ export default function InvoicesPage() {
               <strong>{totals.grossTotal.toFixed(2)}</strong>
             </div>
         
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span style={{ color: "#6b7280" }}>Deposit amount</span>
-              <strong>{totals.depositAmount.toFixed(2)}</strong>
-            </div>
+            {depositPercent > 0 ? (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ color: "#6b7280" }}>Deposit amount</span>
+                <strong>{totals.depositAmount.toFixed(2)}</strong>
+              </div>
+            ) : null}
           </div>
         
           <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, display: "grid", gap: 10 }}>

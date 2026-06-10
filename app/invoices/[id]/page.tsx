@@ -200,7 +200,9 @@ export default function InvoiceDetailPage({ params }: PageProps) {
         <Link href="/">Dashboard</Link>
         <Link href={`/receipts?invoiceId=${invoiceId}`}>Payment Receipts</Link>
         <a
-          href={`/api/invoices/${invoiceId}/pdf`}
+          href={`/api/invoices/${invoiceId}/pdf?v=${encodeURIComponent(
+            `${invoice.deposit_percent}-${invoice.vat_rate}-${grossAfterDiscount}-${invoiceItems.length}`
+          )}`}
           target="_blank"
           rel="noreferrer"
           style={{
@@ -510,36 +512,40 @@ export default function InvoiceDetailPage({ params }: PageProps) {
                     {money(grossAfterDiscount)}
                   </td>
                 </tr>
-                <tr>
-                  <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc", fontWeight: 600 }}>
-                    Deposit Required ({invoice.deposit_percent}%)
-                  </td>
-                  <td
-                    style={{
-                      padding: 6,
-                      borderTop: "1px dotted #ccc",
-                      textAlign: "right",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {money(depositAmount)}
-                  </td>
-                </tr>
-                <tr>
-                  <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc", fontWeight: 600 }}>
-                    Balance Due on Delivery
-                  </td>
-                  <td
-                    style={{
-                      padding: 6,
-                      borderTop: "1px dotted #ccc",
-                      textAlign: "right",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {money(balanceDue)}
-                  </td>
-                </tr>
+                {Number(invoice.deposit_percent) > 0 ? (
+                  <>
+                    <tr>
+                      <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc", fontWeight: 600 }}>
+                        Deposit Required ({invoice.deposit_percent}%)
+                      </td>
+                      <td
+                        style={{
+                          padding: 6,
+                          borderTop: "1px dotted #ccc",
+                          textAlign: "right",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {money(depositAmount)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc", fontWeight: 600 }}>
+                        Balance Due on Delivery
+                      </td>
+                      <td
+                        style={{
+                          padding: 6,
+                          borderTop: "1px dotted #ccc",
+                          textAlign: "right",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {money(balanceDue)}
+                      </td>
+                    </tr>
+                  </>
+                ) : null}
               </tfoot>
             </table>
           </div>

@@ -1,0 +1,5 @@
+alter table public.invoice_items
+  alter column qty type numeric(12, 2)
+  using qty::numeric(12, 2);
+
+notify pgrst, 'reload schema';

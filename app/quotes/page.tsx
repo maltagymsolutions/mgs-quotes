@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { formatDisplayDate } from "@/src/lib/format-date";
+import { formatQuantitySaveError } from "@/src/lib/quantity-save-error";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Client = {
@@ -265,7 +266,7 @@ export default function QuotesPage() {
 
   function updateQty(index: number, qty: number) {
     setQuoteItems((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, qty: qty < 1 ? 1 : qty } : item))
+      prev.map((item, i) => (i === index ? { ...item, qty: qty < 0.01 ? 0.01 : qty } : item))
     );
   }
 
@@ -524,7 +525,7 @@ export default function QuotesPage() {
       const { error: insertItemsError } = await supabase.from("quote_items").insert(itemsToInsert);
 
       if (insertItemsError) {
-        setMessage(insertItemsError.message);
+        setMessage(formatQuantitySaveError(insertItemsError.message));
         return;
       }
 
@@ -575,7 +576,7 @@ export default function QuotesPage() {
     const { error: itemsError } = await supabase.from("quote_items").insert(itemsToInsert);
 
     if (itemsError) {
-      setMessage(itemsError.message);
+      setMessage(formatQuantitySaveError(itemsError.message));
       return;
     }
 
@@ -1003,6 +1004,8 @@ export default function QuotesPage() {
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                       <input
                         type="number"
+                        min="0.01"
+                        step="0.01"
                         value={item.qty}
                         onChange={(e) => updateQty(index, Number(e.target.value || 1))}
                         style={{ width: 80, padding: 6 }}
@@ -1097,10 +1100,12 @@ export default function QuotesPage() {
               <strong>{totals.grossTotal.toFixed(2)}</strong>
             </div>
         
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span style={{ color: "#6b7280" }}>Deposit amount</span>
-              <strong>{totals.depositAmount.toFixed(2)}</strong>
-            </div>
+            {depositPercent > 0 ? (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ color: "#6b7280" }}>Deposit amount</span>
+                <strong>{totals.depositAmount.toFixed(2)}</strong>
+              </div>
+            ) : null}
           </div>
         
           <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, display: "grid", gap: 10 }}>

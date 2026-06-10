@@ -5,6 +5,8 @@ import InvoicePdf from "@/src/pdf/InvoicePdf";
 import { buildDocumentPdfFilename, contentDispositionInline } from "@/src/lib/pdf-filename";
 import { createClient } from "@/src/lib/supabase-server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -57,6 +59,8 @@ export async function GET(
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": contentDispositionInline(filename),
+      "Cache-Control": "no-store, max-age=0",
+      "Pragma": "no-cache",
     },
   });
 }

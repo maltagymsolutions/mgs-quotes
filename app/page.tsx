@@ -129,6 +129,20 @@ function exportFilename(prefix: string) {
   return `${prefix}-${new Date().toISOString().slice(0, 10)}.csv`;
 }
 
+function localIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isDateInRange(date: string, dateFrom: string, dateTo: string) {
+  if (!date) return false;
+  if (dateFrom && date < dateFrom) return false;
+  if (dateTo && date > dateTo) return false;
+  return true;
+}
+
 export default function HomePage() {
   const supabase = useMemo(() => createClient(), []);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -137,6 +151,8 @@ export default function HomePage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [paymentReceipts, setPaymentReceipts] = useState<PaymentReceipt[]>([]);
   const [dashboardMessage, setDashboardMessage] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const loadDashboard = useCallback(async function loadDashboard() {
     const [clientsResult, invoicesResult, invoiceItemsResult, expensesResult, receiptsResult] = await Promise.all([
@@ -203,6 +219,7 @@ export default function HomePage() {
 
   const dashboard = useMemo(() => {
     const itemsByInvoice = new Map<string, InvoiceItem[]>();
+    const receiptsByInvoice = new Map<string, PaymentReceipt[]>();
     const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
     const clientById = new Map(clients.map((client) => [client.id, client]));
     const ownerTransactionRows: Omit<OwnerTransaction, "balance">[] = [];
@@ -211,6 +228,12 @@ export default function HomePage() {
       const existing = itemsByInvoice.get(item.invoice_id) || [];
       existing.push(item);
       itemsByInvoice.set(item.invoice_id, existing);
+    });
+
+    paymentReceipts.forEach((receipt) => {
+      const existing = receiptsByInvoice.get(receipt.invoice_id) || [];
+      existing.push(receipt);
+      receiptsByInvoice.set(receipt.invoice_id, existing);
     });
 
     const statusTotals = new Map<string, number>();
@@ -238,7 +261,9 @@ export default function HomePage() {
     let totalIncomeExclVat = 0;
     let incomeVat = 0;
 
-    invoices.forEach((invoice) => {
+    invoices
+      .filter((invoice) => isDateInRange(invoice.date_issued, dateFrom, dateTo))
+      .forEach((invoice) => {
       const rows = itemsByInvoice.get(invoice.id) || [];
       const itemsTotal = rows.reduce(
         (sum, item) => sum + Number(item.sale_price_incl_vat || 0) * Number(item.qty || 0),
@@ -246,9 +271,40 @@ export default function HomePage() {
       );
       const discountApplied = Math.min(Number(invoice.discount_amount_incl_vat || 0), itemsTotal);
       const invoiceTotal = round2(itemsTotal - discountApplied);
-      const currentStatusTotal = statusTotals.get(invoice.status) || 0;
+      const invoiceReceipts = receiptsByInvoice.get(invoice.id) || [];
+      const totalPaid = Math.min(
+        invoiceTotal,
+        round2(
+          invoiceReceipts.reduce(
+            (sum, receipt) => sum + Number(receipt.amount_paid || 0),
+            0
+          )
+        )
+      );
 
-      statusTotals.set(invoice.status, round2(currentStatusTotal + invoiceTotal));
+      if (invoice.status === "Deposit Paid") {
+        const depositPaid = Math.min(
+          totalPaid,
+          round2(
+            invoiceReceipts
+              .filter((receipt) => receipt.receipt_type === "deposit")
+              .reduce((sum, receipt) => sum + Number(receipt.amount_paid || 0), 0)
+          )
+        );
+        const unpaidBalance = round2(Math.max(invoiceTotal - totalPaid, 0));
+
+        statusTotals.set(
+          "Deposit Paid",
+          round2((statusTotals.get("Deposit Paid") || 0) + depositPaid)
+        );
+        statusTotals.set(
+          "Unpaid",
+          round2((statusTotals.get("Unpaid") || 0) + unpaidBalance)
+        );
+      } else {
+        const currentStatusTotal = statusTotals.get(invoice.status) || 0;
+        statusTotals.set(invoice.status, round2(currentStatusTotal + invoiceTotal));
+      }
 
       if (invoice.status !== "Archived") {
         totalIncome = round2(totalIncome + invoiceTotal);
@@ -271,7 +327,9 @@ export default function HomePage() {
     let expenseVat = 0;
     let vatPayments = 0;
 
-    paymentReceipts.forEach((receipt) => {
+    paymentReceipts
+      .filter((receipt) => isDateInRange(receipt.receipt_date, dateFrom, dateTo))
+      .forEach((receipt) => {
       const owner = resolveOwner(receipt.received_by_owner || receipt.bank_account);
       const invoice = invoiceById.get(receipt.invoice_id);
       const client = invoice?.client_id ? clientById.get(invoice.client_id) : null;
@@ -301,7 +359,9 @@ export default function HomePage() {
       });
     });
 
-    expenses.forEach((expense) => {
+    expenses
+      .filter((expense) => isDateInRange(expense.expense_date, dateFrom, dateTo))
+      .forEach((expense) => {
       const amount = Number(expense.amount_incl_vat || 0);
       const isVatPayment = expense.category === "VAT";
       const paidBy = resolveOwner(expense.paid_by_owner || expense.bank_account);
@@ -460,7 +520,24 @@ export default function HomePage() {
         expenses: monthlyExpenseTotals.get(month) || 0,
       })),
     };
-  }, [clients, expenses, invoiceItems, invoices, paymentReceipts]);
+  }, [clients, dateFrom, dateTo, expenses, invoiceItems, invoices, paymentReceipts]);
+
+  function showAllDates() {
+    setDateFrom("");
+    setDateTo("");
+  }
+
+  function showThisMonth() {
+    const today = new Date();
+    setDateFrom(localIsoDate(new Date(today.getFullYear(), today.getMonth(), 1)));
+    setDateTo(localIsoDate(today));
+  }
+
+  function showThisYear() {
+    const today = new Date();
+    setDateFrom(`${today.getFullYear()}-01-01`);
+    setDateTo(localIsoDate(today));
+  }
 
   function exportOwnerTransactionsCsv() {
     if (dashboard.ownerTransactions.length === 0) {
@@ -598,6 +675,64 @@ export default function HomePage() {
               VAT-exclusive net with VAT payments deducted from the VAT balance.
             </p>
           </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            gap: 10,
+            flexWrap: "wrap",
+            padding: 12,
+            marginBottom: 18,
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            background: "#f9fafb",
+          }}
+        >
+          <div>
+            <label htmlFor="dashboard-date-from" style={{ display: "block", fontSize: 13, color: "#6b7280", marginBottom: 5 }}>
+              From
+            </label>
+            <input
+              id="dashboard-date-from"
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(event) => setDateFrom(event.target.value)}
+              style={{ padding: "8px 10px" }}
+            />
+          </div>
+          <div>
+            <label htmlFor="dashboard-date-to" style={{ display: "block", fontSize: 13, color: "#6b7280", marginBottom: 5 }}>
+              To
+            </label>
+            <input
+              id="dashboard-date-to"
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(event) => setDateTo(event.target.value)}
+              style={{ padding: "8px 10px" }}
+            />
+          </div>
+          <button onClick={showThisMonth} style={{ padding: "9px 12px" }}>
+            This Month
+          </button>
+          <button onClick={showThisYear} style={{ padding: "9px 12px" }}>
+            This Year
+          </button>
+          <button
+            onClick={showAllDates}
+            style={{
+              padding: "9px 12px",
+              background: "#ffffff",
+              color: "#111827",
+              border: "1px solid #d1d5db",
+            }}
+          >
+            All Time
+          </button>
         </div>
 
         <div

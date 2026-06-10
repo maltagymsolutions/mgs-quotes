@@ -24,7 +24,7 @@ type Expense = {
   split_owners: Owner[] | null;
 };
 
-type ExpenseCategory = "Equipment" | "Professional fees" | "Tax" | "Shipping" | "VAT";
+type ExpenseCategory = "Equipment" | "Professional fees" | "Tax" | "Shipping" | "VAT" | "Advertising";
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "Equipment",
@@ -32,6 +32,7 @@ const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "Tax",
   "Shipping",
   "VAT",
+  "Advertising",
 ];
 
 const VAT_RATES = [0, 5, 7, 18] as const;

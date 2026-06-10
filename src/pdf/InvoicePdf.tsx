@@ -244,17 +244,21 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
                 </Text>
               </View>
 
-              <View style={styles.footerRow}>
-                <Text style={styles.footerLabel}>
-                  Deposit Required ({invoice.deposit_percent}%)
-                </Text>
-                <Text style={styles.footerValue}>{money(depositAmount)}</Text>
-              </View>
+              {Number(invoice.deposit_percent) > 0 ? (
+                <>
+                  <View style={styles.footerRow}>
+                    <Text style={styles.footerLabel}>
+                      Deposit Required ({invoice.deposit_percent}%)
+                    </Text>
+                    <Text style={styles.footerValue}>{money(depositAmount)}</Text>
+                  </View>
 
-              <View style={styles.footerRow}>
-                <Text style={styles.footerLabel}>Balance Due on Delivery</Text>
-                <Text style={styles.footerValue}>{money(balanceDue)}</Text>
-              </View>
+                  <View style={styles.footerRow}>
+                    <Text style={styles.footerLabel}>Balance Due on Delivery</Text>
+                    <Text style={styles.footerValue}>{money(balanceDue)}</Text>
+                  </View>
+                </>
+              ) : null}
             </View>
 
             <View style={styles.section}>

@@ -25,6 +25,8 @@ type CsvRow = {
   sale_price_incl_vat: number;
 };
 
+const VAT_RATE = 18;
+
 function money(value: number) {
   return new Intl.NumberFormat("en-MT", {
     style: "currency",
@@ -32,6 +34,11 @@ function money(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Number(value || 0));
+}
+
+function calculateMarginAfterVat(salePriceInclVat: number, costPrice: number) {
+  const salePriceExclVat = salePriceInclVat / (1 + VAT_RATE / 100);
+  return Math.round((salePriceExclVat - costPrice) * 100) / 100;
 }
 
 export default function InventoryPage() {
@@ -534,14 +541,17 @@ export default function InventoryPage() {
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Category</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Cost</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Sale incl. VAT</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Margin</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Margin after VAT</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Edit</th>
 <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Delete</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredInventory.map((item) => {
-                  const margin = Number(item.sale_price_incl_vat || 0) - Number(item.cost_price || 0);
+                  const margin = calculateMarginAfterVat(
+                    Number(item.sale_price_incl_vat || 0),
+                    Number(item.cost_price || 0)
+                  );
 
                   return (
                     <tr key={item.id}>

@@ -35,16 +35,23 @@ export function buildDefaultInvoicePaymentTerms({
   formatMoney: (value: number) => string;
 }) {
   const depositBasisLabel = discountAmount > 0 ? "total after discount" : "total";
-  const lines = [
-    `Deposit required: ${formatMoney(depositAmount)} (${depositPercent}% of ${depositBasisLabel}).`,
-    `Balance due on delivery: ${formatMoney(balanceDue)}.`,
-  ];
+  const hasDeposit = Number(depositPercent) > 0;
+  const lines = hasDeposit
+    ? [
+        `Deposit required: ${formatMoney(depositAmount)} (${depositPercent}% of ${depositBasisLabel}).`,
+        `Balance due on delivery: ${formatMoney(balanceDue)}.`,
+      ]
+    : [];
 
   if (discountAmount > 0) {
     lines.push(`Discount applied: ${formatMoney(discountAmount)}.`);
   }
 
-  lines.push(`Transfer the deposit quoting invoice number ${invoiceNumber} as reference.`);
+  lines.push(
+    hasDeposit
+      ? `Transfer the deposit quoting invoice number ${invoiceNumber} as reference.`
+      : `Transfer payment quoting invoice number ${invoiceNumber} as reference.`
+  );
 
   return lines.join("\n");
 }
