@@ -40,6 +40,7 @@ type Invoice = {
 type InvoiceItem = {
   qty: number | string;
   sale_price_incl_vat: number | string;
+  item_discount_percent?: number | string | null;
 };
 
 type PaymentReceipt = {

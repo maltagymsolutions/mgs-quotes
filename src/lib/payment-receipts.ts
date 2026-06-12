@@ -1,3 +1,5 @@
+import { calculateItemsTotals } from "@/src/lib/item-discounts";
+
 export type PaymentReceiptType = "deposit" | "balance";
 
 export type InvoiceTotalSource = {
@@ -8,6 +10,7 @@ export type InvoiceTotalSource = {
 export type InvoiceItemTotalSource = {
   qty: number | string;
   sale_price_incl_vat: number | string;
+  item_discount_percent?: number | string | null;
 };
 
 export type PaymentReceiptTotalSource = {
@@ -31,12 +34,8 @@ export function calculateInvoiceReceiptTotals(
   invoice: InvoiceTotalSource,
   items: InvoiceItemTotalSource[]
 ) {
-  const grossBeforeDiscount = roundMoney(
-    items.reduce(
-      (sum, item) => sum + Number(item.sale_price_incl_vat || 0) * Number(item.qty || 0),
-      0
-    )
-  );
+  const itemTotals = calculateItemsTotals(items);
+  const grossBeforeDiscount = itemTotals.totalAfterItemDiscounts;
   const discountAmount = roundMoney(
     Math.min(Number(invoice.discount_amount_incl_vat || 0), grossBeforeDiscount)
   );
@@ -46,6 +45,8 @@ export function calculateInvoiceReceiptTotals(
 
   return {
     grossBeforeDiscount,
+    grossBeforeItemDiscounts: itemTotals.grossBeforeItemDiscounts,
+    itemDiscountTotal: itemTotals.itemDiscountTotal,
     discountAmount,
     invoiceTotal,
     depositAmount,

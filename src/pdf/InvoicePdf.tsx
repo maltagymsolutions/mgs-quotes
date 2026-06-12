@@ -6,6 +6,7 @@ import {
   Image,
   StyleSheet,
 } from "@react-pdf/renderer";
+import { Fragment } from "react";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
   buildDefaultInvoicePaymentTerms,
@@ -14,6 +15,7 @@ import {
   resolveInvoiceBankDetails,
   splitTextLines,
 } from "@/src/lib/invoice-text";
+import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
 
 type InvoicePdfProps = {
   invoice: {
@@ -41,6 +43,7 @@ type InvoicePdfProps = {
     name: string;
     sale_price_incl_vat: number | string;
     qty: number | string;
+    item_discount_percent?: number | string | null;
   }[];
   companySettings?: {
     vat_number?: string | null;
@@ -81,6 +84,13 @@ const styles = StyleSheet.create({
   colVat: { width: "10%", textAlign: "center" },
   colUnit: { width: "17%", textAlign: "right" },
   colLine: { width: "17%", textAlign: "right" },
+  discountTd: {
+    paddingHorizontal: 6,
+    paddingBottom: 6,
+    fontSize: 9,
+    fontStyle: "italic",
+    color: "#555555",
+  },
   footerRow: { flexDirection: "row" },
   footerLabel: { width: "83%", padding: 6, borderTopWidth: 1, borderTopColor: "#cccccc" },
   footerValue: { width: "17%", padding: 6, borderTopWidth: 1, borderTopColor: "#cccccc", textAlign: "right" },
@@ -106,12 +116,8 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
   const isBusinessClient = !!client?.is_business_client;
   const companyVatNumber = companySettings?.vat_number || "MT32755725";
 
-  const grossBeforeDiscount = round2(
-    items.reduce(
-      (sum, item) => sum + Number(item.sale_price_incl_vat) * Number(item.qty),
-      0
-    )
-  );
+  const itemTotals = calculateItemsTotals(items);
+  const grossBeforeDiscount = itemTotals.totalAfterItemDiscounts;
 
   const discountAmount = round2(
     Math.min(Number(invoice.discount_amount_incl_vat || 0), grossBeforeDiscount)
@@ -135,7 +141,7 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
       depositAmount,
       balanceDue,
       depositPercent: invoice.deposit_percent,
-      discountAmount,
+      discountAmount: round2(itemTotals.itemDiscountTotal + discountAmount),
       invoiceNumber: invoice.invoice_number,
       formatMoney: money,
     })
@@ -201,16 +207,38 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
                     )
                   : Number(item.sale_price_incl_vat);
 
+                const lineTotals = calculateItemLineTotals(item);
                 const lineDisplay = round2(unitDisplay * Number(item.qty));
+                const discountDisplay = isBusinessClient
+                  ? round2(
+                      lineTotals.discountAmount /
+                        (1 + Number(invoice.vat_rate) / 100)
+                    )
+                  : lineTotals.discountAmount;
 
                 return (
-                  <View style={styles.tr} key={item.id}>
-                    <Text style={[styles.td, styles.colDesc]}>{item.name}</Text>
-                    <Text style={[styles.td, styles.colQty]}>{item.qty}</Text>
-                    <Text style={[styles.td, styles.colVat]}>{invoice.vat_rate}%</Text>
-                    <Text style={[styles.td, styles.colUnit]}>{money(unitDisplay)}</Text>
-                    <Text style={[styles.td, styles.colLine]}>{money(lineDisplay)}</Text>
-                  </View>
+                  <Fragment key={item.id}>
+                    <View style={styles.tr}>
+                      <Text style={[styles.td, styles.colDesc]}>{item.name}</Text>
+                      <Text style={[styles.td, styles.colQty]}>{item.qty}</Text>
+                      <Text style={[styles.td, styles.colVat]}>{invoice.vat_rate}%</Text>
+                      <Text style={[styles.td, styles.colUnit]}>{money(unitDisplay)}</Text>
+                      <Text style={[styles.td, styles.colLine]}>{money(lineDisplay)}</Text>
+                    </View>
+                    {lineTotals.discountPercent > 0 ? (
+                      <View style={styles.tr}>
+                        <Text style={[styles.discountTd, styles.colDesc]}>
+                          Discount: {lineTotals.discountPercent}% item discount
+                        </Text>
+                        <Text style={[styles.discountTd, styles.colQty]} />
+                        <Text style={[styles.discountTd, styles.colVat]} />
+                        <Text style={[styles.discountTd, styles.colUnit]} />
+                        <Text style={[styles.discountTd, styles.colLine]}>
+                          -{money(discountDisplay)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </Fragment>
                 );
               })}
 
@@ -220,10 +248,14 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
                 </Text>
                 <Text style={styles.footerValue}>{money(subtotal)}</Text>
               </View>
-              
+
               {discountAmount > 0 ? (
                 <View style={styles.footerRow}>
-                  <Text style={styles.footerLabel}>Discount</Text>
+                  <Text style={styles.footerLabel}>
+                    {itemTotals.itemDiscountTotal > 0
+                      ? "Additional discount incl. VAT"
+                      : "Discount incl. VAT"}
+                  </Text>
                   <Text style={styles.footerValue}>-{money(discountAmount)}</Text>
                 </View>
               ) : null}

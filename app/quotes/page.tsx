@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { formatDisplayDate } from "@/src/lib/format-date";
+import { INVENTORY_CATEGORIES } from "@/src/lib/inventory-categories";
+import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
 import { formatQuantitySaveError } from "@/src/lib/quantity-save-error";
 import { createClient } from "@/src/lib/supabase-browser";
 
@@ -22,6 +24,7 @@ type InventoryItem = {
   id: string;
   sku: string;
   name: string;
+  category: string | null;
   cost_price: number;
   sale_price_incl_vat: number;
 };
@@ -33,6 +36,7 @@ type QuoteItemDraft = {
   qty: number;
   cost_price: number;
   sale_price_incl_vat: number;
+  item_discount_percent: number;
 };
 
 type SavedQuote = {
@@ -57,6 +61,7 @@ type QuoteItemRow = {
   qty: number;
   cost_price: number;
   sale_price_incl_vat: number;
+  item_discount_percent?: number | null;
 };
 
 type CompanySettings = {
@@ -224,6 +229,7 @@ export default function QuotesPage() {
       qty: Number(item.qty),
       cost_price: Number(item.cost_price),
       sale_price_incl_vat: Number(item.sale_price_incl_vat),
+      item_discount_percent: Number(item.item_discount_percent || 0),
     }));
 
     setEditingQuoteId(quote.id);
@@ -259,6 +265,7 @@ export default function QuotesPage() {
           qty: 1,
           cost_price: Number(item.cost_price),
           sale_price_incl_vat: Number(item.sale_price_incl_vat),
+          item_discount_percent: 0,
         },
       ];
     });
@@ -267,6 +274,15 @@ export default function QuotesPage() {
   function updateQty(index: number, qty: number) {
     setQuoteItems((prev) =>
       prev.map((item, i) => (i === index ? { ...item, qty: qty < 0.01 ? 0.01 : qty } : item))
+    );
+  }
+
+  function updateItemDiscount(index: number, discountPercent: number) {
+    const normalizedDiscount = Math.min(Math.max(discountPercent, 0), 100);
+    setQuoteItems((prev) =>
+      prev.map((item, i) =>
+        i === index ? { ...item, item_discount_percent: normalizedDiscount } : item
+      )
     );
   }
 
@@ -294,12 +310,10 @@ export default function QuotesPage() {
   const isBusinessClient = !!selectedClient?.is_business_client;
 
  const totals = useMemo(() => {
-    const grossBeforeDiscount = round2(
-      quoteItems.reduce(
-        (sum, item) => sum + Number(item.sale_price_incl_vat) * Number(item.qty),
-        0
-      )
-    );
+    const itemTotals = calculateItemsTotals(quoteItems);
+    const grossBeforeItemDiscounts = itemTotals.grossBeforeItemDiscounts;
+    const itemDiscountTotal = itemTotals.itemDiscountTotal;
+    const grossBeforeDiscount = itemTotals.totalAfterItemDiscounts;
   
     const discountApplied = round2(
       Math.min(Number(discountAmountInclVat || 0), grossBeforeDiscount)
@@ -340,6 +354,8 @@ export default function QuotesPage() {
     return {
       subtotal,
       vatAmount: salesVatAmount,
+      grossBeforeItemDiscounts,
+      itemDiscountTotal,
       grossBeforeDiscount,
       discountApplied,
       grossTotal,
@@ -359,13 +375,13 @@ export default function QuotesPage() {
         (item) =>
           item.sku.toLowerCase().includes(q) ||
           item.name.toLowerCase().includes(q) ||
-          ((item as any).category || "").toLowerCase().includes(q)
+          (item.category || "").toLowerCase().includes(q)
       );
     }
   
     if (inventoryCategoryFilter !== "All") {
       items = items.filter(
-        (item) => (((item as any).category || "Other") === inventoryCategoryFilter)
+        (item) => (item.category || "Other") === inventoryCategoryFilter
       );
     }
   
@@ -520,6 +536,7 @@ export default function QuotesPage() {
         qty: item.qty,
         cost_price: item.cost_price,
         sale_price_incl_vat: item.sale_price_incl_vat,
+        item_discount_percent: item.item_discount_percent,
       }));
 
       const { error: insertItemsError } = await supabase.from("quote_items").insert(itemsToInsert);
@@ -571,6 +588,7 @@ export default function QuotesPage() {
       qty: item.qty,
       cost_price: item.cost_price,
       sale_price_incl_vat: item.sale_price_incl_vat,
+      item_discount_percent: item.item_discount_percent,
     }));
 
     const { error: itemsError } = await supabase.from("quote_items").insert(itemsToInsert);
@@ -654,6 +672,7 @@ export default function QuotesPage() {
       qty: item.qty,
       cost_price: item.cost_price,
       sale_price_incl_vat: item.sale_price_incl_vat,
+      item_discount_percent: Number(item.item_discount_percent || 0),
     }));
 
     const { error: invoiceItemsError } = await supabase
@@ -661,7 +680,7 @@ export default function QuotesPage() {
       .insert(invoiceItemsToInsert);
 
     if (invoiceItemsError) {
-      setMessage(invoiceItemsError.message);
+      setMessage(formatQuantitySaveError(invoiceItemsError.message));
       return;
     }
 
@@ -881,7 +900,7 @@ export default function QuotesPage() {
             />
           </div>
           <div>
-            <label>Discount Amount incl. VAT</label>
+            <label>Additional Discount Amount incl. VAT</label>
             <input
               style={{ width: "100%", padding: 10, marginTop: 4 }}
               type="number"
@@ -929,17 +948,11 @@ export default function QuotesPage() {
               onChange={(e) => setInventoryCategoryFilter(e.target.value)}
             >
               <option value="All">All categories</option>
-              <option value="Treadmills">Treadmills</option>
-              <option value="Ellipticals">Ellipticals</option>
-              <option value="Indoor Cycling">Indoor Cycling</option>
-              <option value="Recumbent Bikes">Recumbent Bikes</option>
-              <option value="Rowers">Rowers</option>
-              <option value="Strength">Strength</option>
-              <option value="Accessories">Accessories</option>
-              <option value="Plates">Plates</option>
-              <option value="Bars">Bars</option>
-              <option value="Dumbbells">Dumbbells</option>
-              <option value="Other">Other</option>
+              {INVENTORY_CATEGORIES.map((inventoryCategory) => (
+                <option key={inventoryCategory} value={inventoryCategory}>
+                  {inventoryCategory}
+                </option>
+              ))}
             </select>
           </div>
         
@@ -981,23 +994,28 @@ export default function QuotesPage() {
           </button>
         </div>
 
-       <div style={{ marginTop: 20 }}>
+       <div style={{ marginTop: 20, overflowX: "auto" }}>
           {quoteItems.length === 0 ? (
             <p>No items added yet.</p>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", minWidth: 900, borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>SKU</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Name</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Qty</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Sale incl. VAT</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Discount %</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Line total</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Order</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {quoteItems.map((item, index) => (
+                {quoteItems.map((item, index) => {
+                  const lineTotals = calculateItemLineTotals(item);
+
+                  return (
                   <tr key={`${item.inventory_item_id}-${index}`}>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.sku}</td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.name}</td>
@@ -1012,6 +1030,20 @@ export default function QuotesPage() {
                       />
                     </td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.sale_price_incl_vat}</td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={item.item_discount_percent}
+                        onChange={(e) => updateItemDiscount(index, Number(e.target.value || 0))}
+                        style={{ width: 80, padding: 6 }}
+                      />
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8, fontWeight: 700 }}>
+                      {lineTotals.totalAfterDiscount.toFixed(2)}
+                    </td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button
@@ -1044,7 +1076,8 @@ export default function QuotesPage() {
                       <button onClick={() => removeItem(index)}>Remove</button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -1084,13 +1117,20 @@ export default function QuotesPage() {
             </div>
         
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span style={{ color: "#6b7280" }}>Items total before discount</span>
-              <strong>{totals.grossBeforeDiscount.toFixed(2)}</strong>
+              <span style={{ color: "#6b7280" }}>Items total before discounts</span>
+              <strong>{totals.grossBeforeItemDiscounts.toFixed(2)}</strong>
             </div>
+
+            {totals.itemDiscountTotal > 0 ? (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <span style={{ color: "#6b7280" }}>Item discounts incl. VAT</span>
+                <strong>-{totals.itemDiscountTotal.toFixed(2)}</strong>
+              </div>
+            ) : null}
         
             {totals.discountApplied > 0 ? (
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <span style={{ color: "#6b7280" }}>Discount incl. VAT</span>
+                <span style={{ color: "#6b7280" }}>Additional discount incl. VAT</span>
                 <strong>-{totals.discountApplied.toFixed(2)}</strong>
               </div>
             ) : null}

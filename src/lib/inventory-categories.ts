@@ -1,0 +1,17 @@
+export const INVENTORY_CATEGORIES = [
+  "Treadmills",
+  "Ellipticals",
+  "Indoor Cycling",
+  "Recumbent Bikes",
+  "Rowers",
+  "Strength",
+  "Accessories",
+  "Plates",
+  "Bars",
+  "Dumbbells",
+  "Stepper",
+  "Kettlebells",
+  "Upright Bike",
+  "Weight Stand",
+  "Other",
+] as const;

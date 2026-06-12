@@ -6,7 +6,9 @@ import {
   Image,
   StyleSheet,
 } from "@react-pdf/renderer";
+import { Fragment } from "react";
 import { formatDisplayDate } from "@/src/lib/format-date";
+import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
 
 type QuotePdfProps = {
   quote: {
@@ -32,6 +34,7 @@ type QuotePdfProps = {
     name: string;
     sale_price_incl_vat: number | string;
     qty: number | string;
+    item_discount_percent?: number | string | null;
   }[];
   companySettings?: {
     vat_number?: string | null;
@@ -127,6 +130,13 @@ const styles = StyleSheet.create({
     width: "17%",
     textAlign: "right",
   },
+  discountTd: {
+    paddingHorizontal: 6,
+    paddingBottom: 6,
+    fontSize: 9,
+    fontStyle: "italic",
+    color: "#555555",
+  },
   footerRow: {
     flexDirection: "row",
   },
@@ -178,12 +188,8 @@ export default function QuotePdf({ quote, client, items, companySettings }: Quot
   const isBusinessClient = !!client?.is_business_client;
   const companyVatNumber = companySettings?.vat_number || "MT32755725";
 
-  const grossBeforeDiscount = round2(
-    items.reduce(
-      (sum, item) => sum + Number(item.sale_price_incl_vat) * Number(item.qty),
-      0
-    )
-  );
+  const itemTotals = calculateItemsTotals(items);
+  const grossBeforeDiscount = itemTotals.totalAfterItemDiscounts;
   
   const discountAmount = round2(
     Math.min(Number(quote.discount_amount_incl_vat || 0), grossBeforeDiscount)
@@ -263,16 +269,38 @@ export default function QuotePdf({ quote, client, items, companySettings }: Quot
                     )
                   : Number(item.sale_price_incl_vat);
 
+                const lineTotals = calculateItemLineTotals(item);
                 const lineDisplay = round2(unitDisplay * Number(item.qty));
+                const discountDisplay = isBusinessClient
+                  ? round2(
+                      lineTotals.discountAmount /
+                        (1 + Number(quote.vat_rate) / 100)
+                    )
+                  : lineTotals.discountAmount;
 
                 return (
-                  <View style={styles.tr} key={item.id}>
-                    <Text style={[styles.td, styles.colDesc]}>{item.name}</Text>
-                    <Text style={[styles.td, styles.colQty]}>{item.qty}</Text>
-                    <Text style={[styles.td, styles.colVat]}>{quote.vat_rate}%</Text>
-                    <Text style={[styles.td, styles.colUnit]}>{money(unitDisplay)}</Text>
-                    <Text style={[styles.td, styles.colLine]}>{money(lineDisplay)}</Text>
-                  </View>
+                  <Fragment key={item.id}>
+                    <View style={styles.tr}>
+                      <Text style={[styles.td, styles.colDesc]}>{item.name}</Text>
+                      <Text style={[styles.td, styles.colQty]}>{item.qty}</Text>
+                      <Text style={[styles.td, styles.colVat]}>{quote.vat_rate}%</Text>
+                      <Text style={[styles.td, styles.colUnit]}>{money(unitDisplay)}</Text>
+                      <Text style={[styles.td, styles.colLine]}>{money(lineDisplay)}</Text>
+                    </View>
+                    {lineTotals.discountPercent > 0 ? (
+                      <View style={styles.tr}>
+                        <Text style={[styles.discountTd, styles.colDesc]}>
+                          Discount: {lineTotals.discountPercent}% item discount
+                        </Text>
+                        <Text style={[styles.discountTd, styles.colQty]} />
+                        <Text style={[styles.discountTd, styles.colVat]} />
+                        <Text style={[styles.discountTd, styles.colUnit]} />
+                        <Text style={[styles.discountTd, styles.colLine]}>
+                          -{money(discountDisplay)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </Fragment>
                 );
               })}
 
@@ -282,10 +310,14 @@ export default function QuotePdf({ quote, client, items, companySettings }: Quot
                 </Text>
                 <Text style={styles.footerValue}>{money(subtotal)}</Text>
               </View>
-              
+
               {discountAmount > 0 ? (
                 <View style={styles.footerRow}>
-                  <Text style={styles.footerLabel}>Discount</Text>
+                  <Text style={styles.footerLabel}>
+                    {itemTotals.itemDiscountTotal > 0
+                      ? "Additional discount incl. VAT"
+                      : "Discount incl. VAT"}
+                  </Text>
                   <Text style={styles.footerValue}>-{money(discountAmount)}</Text>
                 </View>
               ) : null}
@@ -315,7 +347,11 @@ export default function QuotePdf({ quote, client, items, companySettings }: Quot
                   <Text>Remaining balance payable on delivery.</Text>
                 </>
               ) : null}
-              {discountAmount > 0 ? <Text>Discount applied: {money(discountAmount)}.</Text> : null}
+              {itemTotals.itemDiscountTotal + discountAmount > 0 ? (
+                <Text>
+                  Discount applied: {money(itemTotals.itemDiscountTotal + discountAmount)}.
+                </Text>
+              ) : null}
               <Text>Quote validity: 10 days from date of issue.</Text>
             </View>
 

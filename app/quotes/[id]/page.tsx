@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { formatDisplayDate } from "@/src/lib/format-date";
+import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type PageProps = {
@@ -40,6 +41,7 @@ type QuoteItem = {
   name: string;
   sale_price_incl_vat: number | string;
   qty: number | string;
+  item_discount_percent?: number | string | null;
 };
 
 function round2(value: number) {
@@ -139,12 +141,8 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
   const isBusinessClient = !!client?.is_business_client;
 
-  const grossBeforeDiscount = round2(
-    quoteItems.reduce(
-      (sum, item) => sum + Number(item.sale_price_incl_vat) * Number(item.qty),
-      0
-    )
-  );
+  const itemTotals = calculateItemsTotals(quoteItems);
+  const grossBeforeDiscount = itemTotals.totalAfterItemDiscounts;
   
   const discountAmount = round2(
     Math.min(Number(quote.discount_amount_incl_vat || 0), grossBeforeDiscount)
@@ -313,72 +311,48 @@ export default function QuoteDetailPage({ params }: PageProps) {
                           (1 + Number(quote.vat_rate) / 100)
                       )
                     : Number(item.sale_price_incl_vat);
-
+                  const lineTotals = calculateItemLineTotals(item);
                   const lineDisplay = round2(unitDisplay * Number(item.qty));
+                  const discountDisplay = isBusinessClient
+                    ? round2(
+                        lineTotals.discountAmount /
+                          (1 + Number(quote.vat_rate) / 100)
+                      )
+                    : lineTotals.discountAmount;
 
                   return (
-                    <tr key={item.id}>
-                      <td
-                        style={{
-                          padding: 6,
-                          borderTop: "1px solid #ddd",
-                          fontSize: 12,
-                          lineHeight: 1.15,
-                          maxWidth: 260,
-                          verticalAlign: "top",
-                        }}
-                      >
-                        {item.name}
-                      </td>
-                      <td
-                        style={{
-                          padding: 6,
-                          borderTop: "1px solid #ddd",
-                          textAlign: "center",
-                          fontSize: 12,
-                          lineHeight: 1.15,
-                          verticalAlign: "top",
-                        }}
-                      >
-                        {item.qty}
-                      </td>
-                      <td
-                        style={{
-                          padding: 6,
-                          borderTop: "1px solid #ddd",
-                          textAlign: "center",
-                          fontSize: 12,
-                          lineHeight: 1.15,
-                          verticalAlign: "top",
-                        }}
-                      >
-                        {quote.vat_rate}%
-                      </td>
-                      <td
-                        style={{
-                          padding: 6,
-                          borderTop: "1px solid #ddd",
-                          textAlign: "right",
-                          fontSize: 12,
-                          lineHeight: 1.15,
-                          verticalAlign: "top",
-                        }}
-                      >
-                        {money(unitDisplay)}
-                      </td>
-                      <td
-                        style={{
-                          padding: 6,
-                          borderTop: "1px solid #ddd",
-                          textAlign: "right",
-                          fontSize: 12,
-                          lineHeight: 1.15,
-                          verticalAlign: "top",
-                        }}
-                      >
-                        {money(lineDisplay)}
-                      </td>
-                    </tr>
+                    <Fragment key={item.id}>
+                      <tr>
+                        <td style={{ padding: 6, borderTop: "1px solid #ddd", fontSize: 12, lineHeight: 1.15, maxWidth: 260, verticalAlign: "top" }}>
+                          {item.name}
+                        </td>
+                        <td style={{ padding: 6, borderTop: "1px solid #ddd", textAlign: "center", fontSize: 12, lineHeight: 1.15, verticalAlign: "top" }}>
+                          {item.qty}
+                        </td>
+                        <td style={{ padding: 6, borderTop: "1px solid #ddd", textAlign: "center", fontSize: 12, lineHeight: 1.15, verticalAlign: "top" }}>
+                          {quote.vat_rate}%
+                        </td>
+                        <td style={{ padding: 6, borderTop: "1px solid #ddd", textAlign: "right", fontSize: 12, lineHeight: 1.15, verticalAlign: "top" }}>
+                          {money(unitDisplay)}
+                        </td>
+                        <td style={{ padding: 6, borderTop: "1px solid #ddd", textAlign: "right", fontSize: 12, lineHeight: 1.15, verticalAlign: "top" }}>
+                          {money(lineDisplay)}
+                        </td>
+                      </tr>
+                      {lineTotals.discountPercent > 0 ? (
+                        <tr style={{ fontStyle: "italic", color: "#4b5563" }}>
+                          <td style={{ padding: "0 6px 6px 6px", fontSize: 11 }}>
+                            Discount: {lineTotals.discountPercent}% item discount
+                          </td>
+                          <td />
+                          <td />
+                          <td />
+                          <td style={{ padding: "0 6px 6px 6px", textAlign: "right", fontSize: 11 }}>
+                            -{money(discountDisplay)}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -394,7 +368,9 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 {discountAmount > 0 ? (
                   <tr>
                     <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc", fontWeight: 600 }}>
-                      Discount incl. VAT
+                      {itemTotals.itemDiscountTotal > 0
+                        ? "Additional discount incl. VAT"
+                        : "Discount incl. VAT"}
                     </td>
                     <td style={{ padding: 6, borderTop: "1px dotted #ccc", textAlign: "right", fontWeight: 600 }}>
                       -{money(discountAmount)}
@@ -441,7 +417,11 @@ export default function QuoteDetailPage({ params }: PageProps) {
                 <div>Remaining balance payable on delivery.</div>
               </>
             ) : null}
-            {discountAmount > 0 ? <div>Discount applied: {money(discountAmount)}.</div> : null}
+            {itemTotals.itemDiscountTotal + discountAmount > 0 ? (
+              <div>
+                Discount applied: {money(itemTotals.itemDiscountTotal + discountAmount)}.
+              </div>
+            ) : null}
             <div>Quote validity: 10 days from date of issue.</div>
           </div>
 

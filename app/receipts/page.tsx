@@ -33,6 +33,7 @@ type InvoiceItemRow = {
   invoice_id: string;
   qty: number;
   sale_price_incl_vat: number;
+  item_discount_percent: number | null;
 };
 
 type PaymentReceipt = {
@@ -96,7 +97,7 @@ export default function PaymentReceiptsPage() {
         .from("invoices")
         .select("id, invoice_number, client_id, date_issued, status, deposit_percent, discount_amount_incl_vat")
         .order("date_issued", { ascending: false }),
-      supabase.from("invoice_items").select("invoice_id, qty, sale_price_incl_vat"),
+      supabase.from("invoice_items").select("*"),
       supabase
         .from("payment_receipts")
         .select("*")

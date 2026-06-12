@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { INVENTORY_CATEGORIES } from "@/src/lib/inventory-categories";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type UserInfo = {
@@ -366,21 +367,11 @@ export default function InventoryPage() {
                 onChange={(e) => setCategory(e.target.value)}
               >
                 <option value="">Select a category</option>
-                <option value="Treadmills">Treadmills</option>
-                <option value="Ellipticals">Ellipticals</option>
-                <option value="Indoor Cycling">Indoor Cycling</option>
-                <option value="Recumbent Bikes">Recumbent Bikes</option>
-                <option value="Rowers">Rowers</option>
-                <option value="Strength">Strength</option>
-                <option value="Accessories">Accessories</option>
-                <option value="Plates">Plates</option>
-                <option value="Bars">Bars</option>
-                <option value="Dumbbells">Dumbbells</option>
-                <option value="Stepper">Stepper</option>
-                <option value="Kettlebells">Kettlebells</option>
-                <option value="Upright Bike">Upright Bike</option>
-                <option value="Weight Stand">Weight Stand</option>
-                <option value="Other">Other</option>
+                {INVENTORY_CATEGORIES.map((inventoryCategory) => (
+                  <option key={inventoryCategory} value={inventoryCategory}>
+                    {inventoryCategory}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -493,22 +484,12 @@ export default function InventoryPage() {
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
             >
-              <option value="">Select a category</option>
-              <option value="Treadmills">Treadmills</option>
-              <option value="Ellipticals">Ellipticals</option>
-              <option value="Indoor Cycling">Indoor Cycling</option>
-              <option value="Recumbent Bikes">Recumbent Bikes</option>
-              <option value="Rowers">Rowers</option>
-              <option value="Strength">Strength</option>
-              <option value="Accessories">Accessories</option>
-              <option value="Plates">Plates</option>
-              <option value="Bars">Bars</option>
-              <option value="Dumbbells">Dumbbells</option>
-              <option value="Stepper">Stepper</option>
-              <option value="Kettlebells">Kettlebells</option>
-              <option value="Upright Bike">Upright Bike</option>
-              <option value="Weight Stand">Weight Stand</option>
-              <option value="Other">Other</option>
+              <option value="All">All categories</option>
+              {INVENTORY_CATEGORIES.map((inventoryCategory) => (
+                <option key={inventoryCategory} value={inventoryCategory}>
+                  {inventoryCategory}
+                </option>
+              ))}
             </select>
           </div>
         

@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildCsv, downloadCsv } from "@/src/lib/csv";
+import { calculateItemsTotals } from "@/src/lib/item-discounts";
 import { Owner, OWNERS, resolveOwner, resolveOwnerSplit } from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
 
@@ -21,6 +22,7 @@ type InvoiceItem = {
   invoice_id: string;
   qty: number;
   sale_price_incl_vat: number;
+  item_discount_percent: number | null;
 };
 
 type Expense = {
@@ -161,7 +163,7 @@ export default function HomePage() {
         .from("invoices")
         .select("id, invoice_number, client_id, date_issued, status, vat_rate, discount_amount_incl_vat")
         .order("date_issued", { ascending: false }),
-      supabase.from("invoice_items").select("invoice_id, qty, sale_price_incl_vat"),
+      supabase.from("invoice_items").select("*"),
       supabase
         .from("expenses")
         .select("id, created_at, expense_date, supplier, description, category, vat_rate, amount_incl_vat, bank_account, paid_by_owner, split_owners")
@@ -265,10 +267,7 @@ export default function HomePage() {
       .filter((invoice) => isDateInRange(invoice.date_issued, dateFrom, dateTo))
       .forEach((invoice) => {
       const rows = itemsByInvoice.get(invoice.id) || [];
-      const itemsTotal = rows.reduce(
-        (sum, item) => sum + Number(item.sale_price_incl_vat || 0) * Number(item.qty || 0),
-        0
-      );
+      const itemsTotal = calculateItemsTotals(rows).totalAfterItemDiscounts;
       const discountApplied = Math.min(Number(invoice.discount_amount_incl_vat || 0), itemsTotal);
       const invoiceTotal = round2(itemsTotal - discountApplied);
       const invoiceReceipts = receiptsByInvoice.get(invoice.id) || [];
