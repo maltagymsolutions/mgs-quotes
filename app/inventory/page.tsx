@@ -376,6 +376,10 @@ export default function InventoryPage() {
                 <option value="Plates">Plates</option>
                 <option value="Bars">Bars</option>
                 <option value="Dumbbells">Dumbbells</option>
+                <option value="Stepper">Stepper</option>
+                <option value="Kettlebells">Kettlebells</option>
+                <option value="Upright Bike">Upright Bike</option>
+                <option value="Weight Stand">Weight Stand</option>
                 <option value="Other">Other</option>
               </select>
             </div>
@@ -500,6 +504,10 @@ export default function InventoryPage() {
               <option value="Plates">Plates</option>
               <option value="Bars">Bars</option>
               <option value="Dumbbells">Dumbbells</option>
+              <option value="Stepper">Stepper</option>
+              <option value="Kettlebells">Kettlebells</option>
+              <option value="Upright Bike">Upright Bike</option>
+              <option value="Weight Stand">Weight Stand</option>
               <option value="Other">Other</option>
             </select>
           </div>
