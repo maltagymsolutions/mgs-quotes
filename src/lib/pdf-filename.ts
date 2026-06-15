@@ -53,6 +53,25 @@ export function buildReceiptPdfFilename({
   return `${datePart} - MGS - ${clientName} - ${labelPart} Receipt.pdf`;
 }
 
+export function buildDeliveryReceiptPdfFilename({
+  deliveryDate,
+  client,
+  invoiceNumber,
+}: {
+  deliveryDate: string | null | undefined;
+  client: ClientNameSource;
+  invoiceNumber: string | number;
+}) {
+  const datePart = formatFilenameDate(deliveryDate);
+  const clientName = sanitizeFilenamePart(
+    client?.company_name || client?.private_name,
+    "Client"
+  );
+  const invoicePart = sanitizeFilenamePart(String(invoiceNumber), "Invoice");
+
+  return `${datePart} - MGS - ${clientName} - ${invoicePart} Delivery Receipt.pdf`;
+}
+
 export function contentDispositionInline(filename: string) {
   const asciiFilename = filename.replace(/[^\x20-\x7E]/g, "");
 

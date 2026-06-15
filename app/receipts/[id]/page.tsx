@@ -26,6 +26,7 @@ type Client = {
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  vat_number?: string | null;
 };
 
 type Invoice = {
@@ -235,6 +236,7 @@ export default function PaymentReceiptDetailPage({ params }: PageProps) {
             <div style={{ fontWeight: 700 }}>
               {client?.company_name || client?.private_name || "Client"}
             </div>
+            {client?.vat_number ? <div>VAT No: {client.vat_number}</div> : null}
             {client?.email ? <div style={{ fontWeight: 700 }}>{client.email}</div> : null}
             {client?.phone ? <div style={{ fontWeight: 700 }}>{client.phone}</div> : null}
             {client?.address ? (

@@ -104,6 +104,10 @@ const cards = [
     title: "Expenses",
     href: "/expenses",
   },
+  {
+    title: "Shipments",
+    href: "/shipments",
+  },
 ];
 
 function round2(value: number) {
@@ -323,6 +327,7 @@ export default function HomePage() {
 
     let totalExpenses = 0;
     let totalExpensesExclVat = 0;
+    let operatingCostsExclVat = 0;
     let expenseVat = 0;
     let vatPayments = 0;
 
@@ -441,6 +446,14 @@ export default function HomePage() {
       } else {
         totalExpensesExclVat = round2(totalExpensesExclVat + expenseExclVat);
         expenseVat = round2(expenseVat + expenseVatAmount);
+
+        if (
+          expense.category !== "Equipment" &&
+          expense.category !== "Shipping" &&
+          expense.category !== "Tax"
+        ) {
+          operatingCostsExclVat = round2(operatingCostsExclVat + expenseExclVat);
+        }
       }
 
       expenseCategoryTotals.set(
@@ -479,6 +492,7 @@ export default function HomePage() {
       totalExpenses,
       totalIncomeExclVat,
       totalExpensesExclVat,
+      operatingCostsExclVat,
       netTotal: round2(totalIncomeExclVat - totalExpensesExclVat),
       incomeVat,
       expenseVat,
@@ -745,6 +759,7 @@ export default function HomePage() {
           {[
             ["Income excl. VAT", dashboard.totalIncomeExclVat],
             ["Expenses excl. VAT", dashboard.totalExpensesExclVat],
+            ["Operating costs excl. VAT", dashboard.operatingCostsExclVat],
             ["Net excl. VAT", dashboard.netTotal],
             ["VAT balance", dashboard.vatBalance],
           ].map(([label, amount]) => (

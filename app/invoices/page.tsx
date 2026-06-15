@@ -1026,6 +1026,7 @@ export default function InvoicesPage() {
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Status</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>View</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Receipts</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Delivery</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Edit</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Archive</th>
               </tr>
@@ -1086,6 +1087,22 @@ export default function InvoicesPage() {
                       }}
                     >
                       Receipts
+                    </Link>
+                  </td>
+                  <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                    <Link
+                      href={`/invoices/${invoice.id}/delivery`}
+                      style={{
+                        display: "inline-block",
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        border: "1px solid #d1d5db",
+                        color: "#111827",
+                        textDecoration: "none",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Delivery
                     </Link>
                   </td>
                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>

@@ -197,6 +197,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
         <Link href="/invoices">← Back to invoices</Link>
         <Link href="/">Dashboard</Link>
         <Link href={`/receipts?invoiceId=${invoiceId}`}>Payment Receipts</Link>
+        <Link href={`/invoices/${invoiceId}/delivery`}>Delivery Receipt</Link>
         <a
           href={`/api/invoices/${invoiceId}/pdf?v=${encodeURIComponent(
             `${invoice.deposit_percent}-${invoice.vat_rate}-${grossAfterDiscount}-${invoiceItems.length}`

@@ -41,6 +41,7 @@ type PaymentReceiptPdfProps = {
     email?: string | null;
     phone?: string | null;
     address?: string | null;
+    vat_number?: string | null;
   } | null;
   items: {
     qty: number | string;
@@ -151,6 +152,7 @@ export default function PaymentReceiptPdf({
               <Text style={styles.bold}>
                 {client?.company_name || client?.private_name || "Client"}
               </Text>
+              {client?.vat_number ? <Text>VAT No: {client.vat_number}</Text> : null}
               {client?.email ? <Text style={styles.bold}>{client.email}</Text> : null}
               {client?.phone ? <Text style={styles.bold}>{client.phone}</Text> : null}
               {client?.address ? <Text style={styles.bold}>{client.address}</Text> : null}
