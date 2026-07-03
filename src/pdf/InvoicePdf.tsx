@@ -4,10 +4,12 @@ import {
   Text,
   View,
   Image,
+  Link,
   StyleSheet,
 } from "@react-pdf/renderer";
 import { Fragment } from "react";
 import { formatDisplayDate } from "@/src/lib/format-date";
+import { CARD_PAYMENT_BRANDS, normalizeExternalUrl } from "@/src/lib/card-payment";
 import {
   buildDefaultInvoicePaymentTerms,
   DEFAULT_INVOICE_NOTES,
@@ -26,6 +28,7 @@ type InvoicePdfProps = {
     deposit_percent: number | string;
     payment_terms?: string | null;
     bank_details?: string | null;
+    card_payment_link?: string | null;
     notes?: string | null;
   };
   client: {
@@ -109,6 +112,18 @@ const styles = StyleSheet.create({
     borderBottomColor: "#111111",
   },
   section: { gap: 4 },
+  cardBrandRow: {
+    flexDirection: "row",
+    gap: 5,
+    alignItems: "center",
+    marginTop: 2,
+  },
+  cardBrandImage: { objectFit: "contain" },
+  cardPaymentLink: {
+    color: "#008fb3",
+    fontSize: 13,
+    textDecoration: "underline",
+  },
   bold: { fontWeight: 700 },
 });
 
@@ -306,6 +321,31 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
                 <Text key={`${line}-${index}`}>{line}</Text>
               ))}
             </View>
+
+            {invoice.card_payment_link ? (
+              <View style={styles.section}>
+                <Text style={styles.bold}>CARD PAYMENT:</Text>
+                <View style={styles.cardBrandRow}>
+                  {CARD_PAYMENT_BRANDS.map((brand) => (
+                    // eslint-disable-next-line jsx-a11y/alt-text -- @react-pdf Image does not support alt text.
+                    <Image
+                      key={brand.label}
+                      src={`${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}${brand.src}`}
+                      style={[
+                        styles.cardBrandImage,
+                        {
+                          width: brand.width,
+                          height: brand.height,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Link src={normalizeExternalUrl(invoice.card_payment_link)}>
+                  <Text style={styles.cardPaymentLink}>View and pay online now</Text>
+                </Link>
+              </View>
+            ) : null}
 
             <View style={styles.section}>
               <Text style={styles.bold}>Notes:</Text>

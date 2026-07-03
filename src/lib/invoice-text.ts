@@ -1,9 +1,8 @@
 export const DEFAULT_INVOICE_BANK_DETAILS = [
-  "Beneficiary: Robert Mallia",
-  "IBAN: LT40 3250 0052 3177 6799",
-  "BIC / SWIFT code: REVOLT21",
-  "Bank Name and Address: Revolut Bank UAB",
-  "Konstitucijos ave. 21B, 08130, Vilnius, Lithuania",
+  "Account Name: ROBERT MALLIA & LUKE GALEA & KARL JOSEPH CAMILLERI T/A MALTA GYM SOLUTIONS",
+  "IBAN: MT32APSB77013000000050409410015",
+  "BIC/SWIFT: APSBMTMTXXX",
+  "Bank details: APS BANK LTD, APS CENTRE TOWER STREET, BIRKIRKARA",
 ].join("\n");
 
 const LEGACY_INVOICE_BANK_DETAILS = [
@@ -13,7 +12,7 @@ const LEGACY_INVOICE_BANK_DETAILS = [
 ].join("\n");
 
 export const DEFAULT_INVOICE_NOTES =
-  "Price includes ground floor delivery and installation";
+  "Price includes ground floor delivery. Installation is available for an additional €30.";
 
 export function splitTextLines(value: string) {
   return value.split(/\r?\n/).filter((line) => line.trim().length > 0);

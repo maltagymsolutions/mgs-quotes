@@ -87,7 +87,8 @@ function buildInvoiceNumber(prefix: string, nextNumber: number) {
   return `${prefix}-${year}-${nextNumber}`;
 }
 
-const DEFAULT_NOTES = "Price includes ground floor delivery and installation";
+const DEFAULT_NOTES =
+  "Price includes ground floor delivery. Installation is available for an additional €30.";
 
 export default function QuotesPage() {
   const supabase = createClient();

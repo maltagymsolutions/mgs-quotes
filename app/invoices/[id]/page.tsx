@@ -9,6 +9,7 @@ import {
   resolveCustomText,
   resolveInvoiceBankDetails,
 } from "@/src/lib/invoice-text";
+import { CARD_PAYMENT_BRANDS, normalizeExternalUrl } from "@/src/lib/card-payment";
 import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
 import { createClient } from "@/src/lib/supabase-browser";
 
@@ -41,6 +42,7 @@ type Invoice = {
   deposit_percent: number | string;
   payment_terms?: string | null;
   bank_details?: string | null;
+  card_payment_link?: string | null;
   notes?: string | null;
 };
 
@@ -536,6 +538,43 @@ export default function InvoiceDetailPage({ params }: PageProps) {
             <div style={{ fontWeight: 700 }}>BANK DETAILS:</div>
             <div style={{ whiteSpace: "pre-line" }}>{bankDetails}</div>
           </div>
+
+          {invoice.card_payment_link ? (
+            <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
+              <div style={{ fontWeight: 700 }}>CARD PAYMENT:</div>
+              <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+                {CARD_PAYMENT_BRANDS.map((brand) => (
+                  // eslint-disable-next-line @next/next/no-img-element -- These source files are provided payment logos used in printable invoice output.
+                  <img
+                    key={brand.label}
+                    src={brand.src}
+                    alt={brand.label}
+                    width={brand.width}
+                    height={brand.height}
+                    style={{
+                      display: "block",
+                      height: brand.height,
+                      objectFit: "contain",
+                      width: brand.width,
+                    }}
+                  />
+                ))}
+              </div>
+              <a
+                href={normalizeExternalUrl(invoice.card_payment_link)}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  color: "#008fb3",
+                  fontSize: 18,
+                  textDecoration: "underline",
+                  width: "fit-content",
+                }}
+              >
+                View and pay online now
+              </a>
+            </div>
+          ) : null}
 
           <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
             <div style={{ fontWeight: 700 }}>Notes:</div>

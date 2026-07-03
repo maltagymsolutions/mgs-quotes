@@ -52,6 +52,7 @@ type SavedInvoice = {
   discount_amount_incl_vat: number | null;
   payment_terms: string | null;
   bank_details: string | null;
+  card_payment_link: string | null;
   notes: string | null;
 };
 
@@ -111,6 +112,7 @@ export default function InvoicesPage() {
   const [discountAmountInclVat, setDiscountAmountInclVat] = useState(0);
   const [paymentTerms, setPaymentTerms] = useState<string | null>(null);
   const [bankDetails, setBankDetails] = useState<string | null>(null);
+  const [cardPaymentLink, setCardPaymentLink] = useState("");
   const [notes, setNotes] = useState(DEFAULT_INVOICE_NOTES);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemDraft[]>([]);
   const [selectedInventoryId, setSelectedInventoryId] = useState("");
@@ -198,6 +200,7 @@ export default function InvoicesPage() {
     setDiscountAmountInclVat(0);
     setPaymentTerms(null);
     setBankDetails(null);
+    setCardPaymentLink("");
     setNotes(DEFAULT_INVOICE_NOTES);
     setInvoiceItems([]);
     setSelectedInventoryId("");
@@ -237,6 +240,7 @@ export default function InvoicesPage() {
     setDiscountAmountInclVat(Number(invoice.discount_amount_incl_vat || 0));
     setPaymentTerms(invoice.payment_terms || null);
     setBankDetails(invoice.bank_details || null);
+    setCardPaymentLink(invoice.card_payment_link || "");
     setNotes(invoice.notes || DEFAULT_INVOICE_NOTES);
     setInvoiceItems(draftItems);
     setSelectedInventoryId("");
@@ -418,6 +422,11 @@ export default function InvoicesPage() {
     return normalizedValue && normalizedValue !== defaultValue ? normalizedValue : null;
   }
 
+  function normalizeOptionalField(value: string) {
+    const normalizedValue = value.trim();
+    return normalizedValue || null;
+  }
+
   async function saveInvoice() {
     if (!companySettings && !editingInvoiceId) {
       setMessage("Company settings not loaded.");
@@ -447,6 +456,7 @@ export default function InvoicesPage() {
           discount_amount_incl_vat: discountAmountInclVat,
           payment_terms: normalizeOptionalCustomText(displayedPaymentTerms, defaultPaymentTerms),
           bank_details: normalizeOptionalCustomText(displayedBankDetails, DEFAULT_INVOICE_BANK_DETAILS),
+          card_payment_link: normalizeOptionalField(cardPaymentLink),
           notes: notes || null,
         })
         .eq("id", editingInvoiceId);
@@ -509,6 +519,7 @@ export default function InvoicesPage() {
         discount_amount_incl_vat: discountAmountInclVat,
         payment_terms: normalizeOptionalCustomText(displayedPaymentTerms, defaultPaymentTerms),
         bank_details: normalizeOptionalCustomText(displayedBankDetails, DEFAULT_INVOICE_BANK_DETAILS),
+        card_payment_link: normalizeOptionalField(cardPaymentLink),
         notes: notes || null,
         status: "Unpaid",
       })
@@ -676,6 +687,16 @@ export default function InvoicesPage() {
               style={{ width: "100%", padding: 10, marginTop: 4, minHeight: 82 }}
               value={displayedBankDetails}
               onChange={(e) => setBankDetails(e.target.value)}
+            />
+          </div>
+          <div>
+            <label>Card Payment Link (optional)</label>
+            <input
+              style={{ width: "100%", padding: 10, marginTop: 4 }}
+              type="url"
+              placeholder="https://..."
+              value={cardPaymentLink}
+              onChange={(e) => setCardPaymentLink(e.target.value)}
             />
           </div>
           <div>
