@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
   buildDefaultInvoicePaymentTerms,
@@ -416,6 +417,7 @@ export default function InvoicesPage() {
 
   const displayedPaymentTerms = paymentTerms ?? defaultPaymentTerms;
   const displayedBankDetails = resolveInvoiceBankDetails(bankDetails);
+  const showDepositDetails = isPartialDeposit(depositPercent);
 
   function normalizeOptionalCustomText(value: string, defaultValue: string) {
     const normalizedValue = value.trim();
@@ -941,7 +943,7 @@ export default function InvoicesPage() {
               <strong>{totals.grossTotal.toFixed(2)}</strong>
             </div>
         
-            {depositPercent > 0 ? (
+            {showDepositDetails ? (
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ color: "#6b7280" }}>Deposit amount</span>
                 <strong>{totals.depositAmount.toFixed(2)}</strong>

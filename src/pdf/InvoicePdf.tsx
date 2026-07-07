@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from "@react-pdf/renderer";
 import { Fragment } from "react";
+import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import { CARD_PAYMENT_BRANDS, normalizeExternalUrl } from "@/src/lib/card-payment";
 import {
@@ -150,6 +151,7 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
   
   const depositAmount = round2(grossAfterDiscount * (Number(invoice.deposit_percent) / 100));
   const balanceDue = round2(grossAfterDiscount - depositAmount);
+  const showDepositDetails = isPartialDeposit(invoice.deposit_percent);
   const paymentTerms = resolveCustomText(
     invoice.payment_terms,
     buildDefaultInvoicePaymentTerms({
@@ -291,7 +293,7 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
                 </Text>
               </View>
 
-              {Number(invoice.deposit_percent) > 0 ? (
+              {showDepositDetails ? (
                 <>
                   <View style={styles.footerRow}>
                     <Text style={styles.footerLabel}>

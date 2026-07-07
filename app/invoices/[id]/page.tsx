@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
+import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
   buildDefaultInvoicePaymentTerms,
@@ -173,6 +174,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
   );
   
   const balanceDue = round2(grossAfterDiscount - depositAmount);
+  const showDepositDetails = isPartialDeposit(invoice.deposit_percent);
   const companyVatNumber = companySettings?.vat_number || "MT32755725";
   const paymentTerms = resolveCustomText(
     invoice.payment_terms,
@@ -491,7 +493,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
                     {money(grossAfterDiscount)}
                   </td>
                 </tr>
-                {Number(invoice.deposit_percent) > 0 ? (
+                {showDepositDetails ? (
                   <>
                     <tr>
                       <td colSpan={4} style={{ padding: 6, borderTop: "1px dotted #ccc", fontWeight: 600 }}>

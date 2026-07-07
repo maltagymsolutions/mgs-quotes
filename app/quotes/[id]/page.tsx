@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
+import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
 import { createClient } from "@/src/lib/supabase-browser";
@@ -158,6 +159,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
     grossAfterDiscount - grossAfterDiscount / (1 + Number(quote.vat_rate) / 100)
   );  
   const depositAmount = round2(grossAfterDiscount * (Number(quote.deposit_percent) / 100));
+  const showDepositDetails = isPartialDeposit(quote.deposit_percent);
   const companyVatNumber = companySettings?.vat_number || "MT32755725";
 
   return (
@@ -411,7 +413,7 @@ export default function QuoteDetailPage({ params }: PageProps) {
 
   <div style={{ display: "grid", gap: 4, fontSize: 13, lineHeight: 1.3 }}>
             <div style={{ fontWeight: 700 }}>PAYMENT TERMS</div>
-            {Number(quote.deposit_percent) > 0 ? (
+            {showDepositDetails ? (
               <>
                 <div>Deposit required: {quote.deposit_percent}% ({money(depositAmount)}) upon order.</div>
                 <div>Remaining balance payable on delivery.</div>

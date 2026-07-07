@@ -7,6 +7,7 @@ import {
   StyleSheet,
 } from "@react-pdf/renderer";
 import { Fragment } from "react";
+import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
 
@@ -210,6 +211,7 @@ export default function QuotePdf({ quote, client, items, companySettings }: Quot
   const depositAmount = round2(
     grossAfterDiscount * (Number(quote.deposit_percent) / 100)
   );
+  const showDepositDetails = isPartialDeposit(quote.deposit_percent);
 
   return (
     <Document>
@@ -341,7 +343,7 @@ export default function QuotePdf({ quote, client, items, companySettings }: Quot
 
             <View style={styles.section}>
               <Text style={styles.bold}>PAYMENT TERMS</Text>
-              {Number(quote.deposit_percent) > 0 ? (
+              {showDepositDetails ? (
                 <>
                   <Text>Deposit required: {quote.deposit_percent}% ({money(depositAmount)}) upon order.</Text>
                   <Text>Remaining balance payable on delivery.</Text>

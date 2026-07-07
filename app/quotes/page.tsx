@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import { INVENTORY_CATEGORIES } from "@/src/lib/inventory-categories";
 import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
@@ -367,6 +368,7 @@ export default function QuotesPage() {
       depositAmount,
     };
   }, [quoteItems, vatRate, depositPercent, isBusinessClient, shippingCostInclVat, discountAmountInclVat]);
+  const showDepositDetails = isPartialDeposit(depositPercent);
   const filteredInventoryOptions = useMemo(() => {
     let items = [...inventory];
   
@@ -1141,7 +1143,7 @@ export default function QuotesPage() {
               <strong>{totals.grossTotal.toFixed(2)}</strong>
             </div>
         
-            {depositPercent > 0 ? (
+            {showDepositDetails ? (
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                 <span style={{ color: "#6b7280" }}>Deposit amount</span>
                 <strong>{totals.depositAmount.toFixed(2)}</strong>

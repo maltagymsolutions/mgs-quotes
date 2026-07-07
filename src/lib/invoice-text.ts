@@ -1,3 +1,5 @@
+import { isPartialDeposit } from "@/src/lib/deposits";
+
 export const DEFAULT_INVOICE_BANK_DETAILS = [
   "Account Name: ROBERT MALLIA & LUKE GALEA & KARL JOSEPH CAMILLERI T/A MALTA GYM SOLUTIONS",
   "IBAN: MT32APSB77013000000050409410015",
@@ -34,7 +36,7 @@ export function buildDefaultInvoicePaymentTerms({
   formatMoney: (value: number) => string;
 }) {
   const depositBasisLabel = discountAmount > 0 ? "total after discount" : "total";
-  const hasDeposit = Number(depositPercent) > 0;
+  const hasDeposit = isPartialDeposit(depositPercent);
   const lines = hasDeposit
     ? [
         `Deposit required: ${formatMoney(depositAmount)} (${depositPercent}% of ${depositBasisLabel}).`,
