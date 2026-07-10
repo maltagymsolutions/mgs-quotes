@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppPage } from "@/src/components/app-page";
 import { INVENTORY_CATEGORIES } from "@/src/lib/inventory-categories";
 import { createClient } from "@/src/lib/supabase-browser";
 
@@ -62,6 +62,20 @@ export default function InventoryPage() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [sortBy, setSortBy] = useState("name-asc");
 
+  const loadInventory = useCallback(async function loadInventory() {
+    const { data, error } = await supabase
+      .from("inventory_items")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setInventory(data || []);
+  }, [supabase]);
+
   useEffect(() => {
     async function loadUser() {
       const { data } = await supabase.auth.getUser();
@@ -80,22 +94,14 @@ export default function InventoryPage() {
   }, [supabase]);
 
   useEffect(() => {
-    if (user) loadInventory();
-  }, [user]);
+    if (!user) return;
 
-  async function loadInventory() {
-    const { data, error } = await supabase
-      .from("inventory_items")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const timer = window.setTimeout(() => {
+      loadInventory();
+    }, 0);
 
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setInventory(data || []);
-  }
+    return () => window.clearTimeout(timer);
+  }, [loadInventory, user]);
 
   async function signOut() {
     const { error } = await supabase.auth.signOut();
@@ -288,44 +294,18 @@ export default function InventoryPage() {
   }, [inventory, searchTerm, categoryFilter, sortBy]);
 
   return (
-    <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1180 }}>
-      <div style={{ marginBottom: 20 }}>
-        <Link href="/">← Back to dashboard</Link>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 16,
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          marginBottom: 24,
-        }}
-      >
-        <div>
-          <h1 style={{ marginBottom: 8 }}>Inventory</h1>
-          <p style={{ margin: 0, color: "#4b5563" }}>
-            Manage your equipment list, prices, and CSV imports.
-          </p>
-        </div>
-
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 14,
-            padding: 14,
-            minWidth: 240,
-          }}
-        >
-          <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 6 }}>Logged in as</div>
-          <div style={{ fontWeight: 700, marginBottom: 12 }}>{user?.email || "-"}</div>
-          <button onClick={signOut} style={{ padding: "10px 14px" }}>
-            Log Out
+    <AppPage
+      title="Inventory"
+      description="Manage equipment SKUs, categories, costs, sale prices, margin, and CSV imports."
+      actions={
+        <div className="rounded-md border border-white/15 px-3 py-2 text-sm text-slate-200">
+          <span className="mr-3">{user?.email || "-"}</span>
+          <button onClick={signOut} className="!rounded-md !border-white/20 !bg-transparent px-3 py-1.5 text-sm font-bold !text-white">
+            Log out
           </button>
         </div>
-      </div>
+      }
+    >
 
       <div
         style={{
@@ -599,6 +579,6 @@ export default function InventoryPage() {
           {message}
         </div>
       ) : null}
-    </main>
+    </AppPage>
   );
 }

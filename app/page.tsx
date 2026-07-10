@@ -3,9 +3,37 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ArrowRight,
+  BarChart3,
+  Boxes,
+  CalendarDays,
+  CreditCard,
+  Download,
+  FileText,
+  Filter,
+  Landmark,
+  Package,
+  ReceiptText,
+  RefreshCw,
+  Ship,
+  TrendingDown,
+  TrendingUp,
+  Users,
+  WalletCards,
+  type LucideIcon,
+} from "lucide-react";
 import { buildCsv, downloadCsv } from "@/src/lib/csv";
 import { calculateItemsTotals } from "@/src/lib/item-discounts";
-import { Owner, OWNERS, resolveOwner, resolveOwnerSplit } from "@/src/lib/owners";
+import {
+  BankAccount,
+  isOwner,
+  Owner,
+  OWNERS,
+  resolveBankAccount,
+  resolveOwner,
+  resolveOwnerSplit,
+} from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Invoice = {
@@ -34,7 +62,7 @@ type Expense = {
   category: string;
   vat_rate: number;
   amount_incl_vat: number;
-  bank_account?: Owner | null;
+  bank_account?: BankAccount | null;
   paid_by_owner: Owner | null;
   split_owners: Owner[] | null;
 };
@@ -46,7 +74,7 @@ type PaymentReceipt = {
   receipt_type: string;
   receipt_date: string;
   amount_paid: number;
-  bank_account?: Owner | null;
+  bank_account?: BankAccount | null;
   received_by_owner: Owner | null;
 };
 
@@ -83,30 +111,50 @@ const cards = [
   {
     title: "Clients",
     href: "/clients",
+    description: "Manage contacts and billing details",
+    icon: Users,
   },
   {
     title: "Inventory",
     href: "/inventory",
+    description: "Track stock, pricing, and categories",
+    icon: Boxes,
   },
   {
     title: "Quotes",
     href: "/quotes",
+    description: "Create and revise customer quotes",
+    icon: FileText,
   },
   {
     title: "Invoices",
     href: "/invoices",
+    description: "Issue invoices and track statuses",
+    icon: ReceiptText,
   },
   {
     title: "Payment Receipts",
     href: "/receipts",
+    description: "Record deposits and payments",
+    icon: CreditCard,
+  },
+  {
+    title: "APS Account",
+    href: "/aps",
+    description: "Review APS balance and transactions",
+    icon: Landmark,
   },
   {
     title: "Expenses",
     href: "/expenses",
+    description: "Capture supplier and VAT costs",
+    icon: TrendingDown,
   },
   {
     title: "Shipments",
     href: "/shipments",
+    description: "Monitor shipment profitability",
+    icon: Ship,
   },
 ];
 
@@ -159,60 +207,74 @@ export default function HomePage() {
   const [dashboardMessage, setDashboardMessage] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async function loadDashboard() {
-    const [clientsResult, invoicesResult, invoiceItemsResult, expensesResult, receiptsResult] = await Promise.all([
-      supabase.from("clients").select("id, private_name, company_name"),
-      supabase
-        .from("invoices")
-        .select("id, invoice_number, client_id, date_issued, status, vat_rate, discount_amount_incl_vat")
-        .order("date_issued", { ascending: false }),
-      supabase.from("invoice_items").select("*"),
-      supabase
-        .from("expenses")
-        .select("id, created_at, expense_date, supplier, description, category, vat_rate, amount_incl_vat, bank_account, paid_by_owner, split_owners")
-        .order("expense_date", { ascending: false }),
-      supabase
-        .from("payment_receipts")
-        .select("id, created_at, invoice_id, receipt_type, receipt_date, amount_paid, bank_account, received_by_owner")
-        .order("receipt_date", { ascending: false }),
-    ]);
+    setIsLoadingDashboard(true);
 
-    if (clientsResult.error) {
-      setDashboardMessage(clientsResult.error.message);
-      return;
+    try {
+      const [clientsResult, invoicesResult, invoiceItemsResult, expensesResult, receiptsResult] = await Promise.all([
+        supabase.from("clients").select("id, private_name, company_name"),
+        supabase
+          .from("invoices")
+          .select("id, invoice_number, client_id, date_issued, status, vat_rate, discount_amount_incl_vat")
+          .order("date_issued", { ascending: false }),
+        supabase.from("invoice_items").select("*"),
+        supabase
+          .from("expenses")
+          .select("id, created_at, expense_date, supplier, description, category, vat_rate, amount_incl_vat, bank_account, paid_by_owner, split_owners")
+          .order("expense_date", { ascending: false }),
+        supabase
+          .from("payment_receipts")
+          .select("id, created_at, invoice_id, receipt_type, receipt_date, amount_paid, bank_account, received_by_owner")
+          .order("receipt_date", { ascending: false }),
+      ]);
+
+      if (clientsResult.error) {
+        setDashboardMessage(clientsResult.error.message);
+        return;
+      }
+
+      if (invoicesResult.error) {
+        setDashboardMessage(invoicesResult.error.message);
+        return;
+      }
+
+      if (invoiceItemsResult.error) {
+        setDashboardMessage(invoiceItemsResult.error.message);
+        return;
+      }
+
+      setClients(clientsResult.data || []);
+      setInvoices(invoicesResult.data || []);
+      setInvoiceItems(invoiceItemsResult.data || []);
+
+      if (expensesResult.error) {
+        setExpenses([]);
+        setDashboardMessage(EXPENSES_SETUP_MESSAGE);
+        return;
+      }
+
+      setExpenses(expensesResult.data || []);
+
+      if (receiptsResult.error) {
+        setPaymentReceipts([]);
+        setDashboardMessage(RECEIPTS_SETUP_MESSAGE);
+        return;
+      }
+
+      setPaymentReceipts(receiptsResult.data || []);
+      setDashboardMessage("");
+      setLastUpdated(new Date().toLocaleString("en-MT", {
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      }));
+    } finally {
+      setIsLoadingDashboard(false);
     }
-
-    if (invoicesResult.error) {
-      setDashboardMessage(invoicesResult.error.message);
-      return;
-    }
-
-    if (invoiceItemsResult.error) {
-      setDashboardMessage(invoiceItemsResult.error.message);
-      return;
-    }
-
-    setClients(clientsResult.data || []);
-    setInvoices(invoicesResult.data || []);
-    setInvoiceItems(invoiceItemsResult.data || []);
-
-    if (expensesResult.error) {
-      setExpenses([]);
-      setDashboardMessage(EXPENSES_SETUP_MESSAGE);
-      return;
-    }
-
-    setExpenses(expensesResult.data || []);
-
-    if (receiptsResult.error) {
-      setPaymentReceipts([]);
-      setDashboardMessage(RECEIPTS_SETUP_MESSAGE);
-      return;
-    }
-
-    setPaymentReceipts(receiptsResult.data || []);
-    setDashboardMessage("");
   }, [supabase]);
 
   useEffect(() => {
@@ -334,7 +396,10 @@ export default function HomePage() {
     paymentReceipts
       .filter((receipt) => isDateInRange(receipt.receipt_date, dateFrom, dateTo))
       .forEach((receipt) => {
-      const owner = resolveOwner(receipt.received_by_owner || receipt.bank_account);
+      const bankAccount = resolveBankAccount(receipt.bank_account);
+      if (!isOwner(bankAccount)) return;
+
+      const owner = resolveOwner(receipt.received_by_owner || bankAccount);
       const invoice = invoiceById.get(receipt.invoice_id);
       const client = invoice?.client_id ? clientById.get(invoice.client_id) : null;
       const clientName = client?.company_name || client?.private_name || "Customer";
@@ -368,7 +433,43 @@ export default function HomePage() {
       .forEach((expense) => {
       const amount = Number(expense.amount_incl_vat || 0);
       const isVatPayment = expense.category === "VAT";
-      const paidBy = resolveOwner(expense.paid_by_owner || expense.bank_account);
+      const bankAccount = resolveBankAccount(expense.bank_account);
+      if (!isOwner(bankAccount)) {
+        totalExpenses = round2(totalExpenses + amount);
+        const expenseVatAmount = isVatPayment
+          ? 0
+          : calculateVatFromInclusive(amount, Number(expense.vat_rate || 0));
+        const expenseExclVat = round2(amount - expenseVatAmount);
+
+        if (isVatPayment) {
+          vatPayments = round2(vatPayments + amount);
+        } else {
+          totalExpensesExclVat = round2(totalExpensesExclVat + expenseExclVat);
+          expenseVat = round2(expenseVat + expenseVatAmount);
+
+          if (
+            expense.category !== "Equipment" &&
+            expense.category !== "Shipping" &&
+            expense.category !== "Tax"
+          ) {
+            operatingCostsExclVat = round2(operatingCostsExclVat + expenseExclVat);
+          }
+        }
+
+        expenseCategoryTotals.set(
+          expense.category,
+          round2((expenseCategoryTotals.get(expense.category) || 0) + amount)
+        );
+
+        const month = expense.expense_date?.slice(0, 7) || "Undated";
+        if (!isVatPayment) {
+          monthlyExpenseTotals.set(month, round2((monthlyExpenseTotals.get(month) || 0) + expenseExclVat));
+        }
+
+        return;
+      }
+
+      const paidBy = resolveOwner(expense.paid_by_owner || bankAccount);
       const splitBetween = Array.from(new Set([paidBy, ...resolveOwnerSplit(expense.split_owners, paidBy)]));
       const paidTotals =
         ownerTotals.get(paidBy) || {
@@ -585,355 +686,391 @@ export default function HomePage() {
     setDashboardMessage(`Exported ${dashboard.ownerTransactions.length} owner transaction(s).`);
   }
 
+  const activeRangeLabel = dateFrom || dateTo
+    ? `${dateFrom || "Start"} to ${dateTo || "Today"}`
+    : "All time";
+  const latestOwnerTransactions = dashboard.ownerTransactions.slice().reverse().slice(0, 8);
+  const summaryCards = [
+    {
+      label: "Income excl. VAT",
+      amount: dashboard.totalIncomeExclVat,
+      icon: TrendingUp,
+      tone: "green" as const,
+      caption: "Invoice value before VAT",
+    },
+    {
+      label: "Expenses excl. VAT",
+      amount: dashboard.totalExpensesExclVat,
+      icon: TrendingDown,
+      tone: "red" as const,
+      caption: "Supplier costs before VAT",
+    },
+    {
+      label: "Operating costs",
+      amount: dashboard.operatingCostsExclVat,
+      icon: Package,
+      tone: "amber" as const,
+      caption: "Excluding equipment, shipping, and tax",
+    },
+    {
+      label: "Net excl. VAT",
+      amount: dashboard.netTotal,
+      icon: BarChart3,
+      tone: dashboard.netTotal < 0 ? "red" as const : "green" as const,
+      caption: "Income minus expenses",
+    },
+    {
+      label: "VAT balance",
+      amount: dashboard.vatBalance,
+      icon: Landmark,
+      tone: dashboard.vatBalance < 0 ? "green" as const : "blue" as const,
+      caption: "Output VAT less input VAT and payments",
+    },
+  ];
+
   return (
-    <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1280 }}>
-      <section
-        style={{
-          padding: 18,
-          borderRadius: 12,
-          background: "#ffffff",
-          border: "1px solid #e5e7eb",
-          marginBottom: 18,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 18,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+    <main className="mx-auto w-full max-w-7xl px-4 py-6 font-sans text-slate-950 sm:px-6 lg:px-8">
+      <div className="mb-6 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-6 border-b border-slate-200 bg-slate-950 px-5 py-5 text-white sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
             <Image
               src="/mgs-logo.svg"
               alt="Malta Gym Solutions"
               width={118}
               height={63}
               priority
-              style={{ width: 118, height: "auto", display: "block" }}
+              className="block h-auto w-[108px] rounded bg-white px-2 py-1"
             />
             <div>
-              <p
-                style={{
-                  margin: "0 0 4px 0",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "#6b7280",
-                }}
-              >
-                Admin Dashboard
+              <p className="mb-1 text-xs font-bold uppercase tracking-[0.08em] text-slate-300">Admin Dashboard</p>
+              <h1 className="m-0 text-2xl font-bold tracking-normal !text-white sm:text-3xl">MGS Workspace</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                Finance, sales, inventory, receipts, and owner cash movement in one operational view.
               </p>
-              <h1
-                style={{
-                  margin: 0,
-                  fontSize: 28,
-                  lineHeight: 1.1,
-                  color: "#111827",
-                  letterSpacing: 0,
-                }}
-              >
-                MGS Workspace
-              </h1>
             </div>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              justifyContent: "flex-end",
-            }}
-          >
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <Link
+              href="/invoices"
+              className="inline-flex min-h-10 items-center gap-2 rounded-md bg-white px-3 text-sm font-bold !text-slate-950 shadow-sm transition hover:bg-slate-100"
+            >
+              <ReceiptText size={16} aria-hidden="true" />
+              New invoice
+            </Link>
+            <Link
+              href="/quotes"
+              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/20 px-3 text-sm font-bold !text-white transition hover:bg-white/10"
+            >
+              <FileText size={16} aria-hidden="true" />
+              New quote
+            </Link>
+            <button
+              onClick={loadDashboard}
+              disabled={isLoadingDashboard}
+              className="inline-flex min-h-10 items-center gap-2 !rounded-md !border-white/20 !bg-transparent px-3 text-sm font-bold !text-white transition hover:!bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw size={16} className={isLoadingDashboard ? "animate-spin" : ""} aria-hidden="true" />
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-px bg-slate-200 sm:grid-cols-2 lg:grid-cols-4">
+          <DashboardFact label="Active range" value={activeRangeLabel} icon={CalendarDays} />
+          <DashboardFact label="Invoices" value={String(invoices.length)} icon={ReceiptText} />
+          <DashboardFact label="Receipts" value={String(paymentReceipts.length)} icon={CreditCard} />
+          <DashboardFact label="Last update" value={lastUpdated || "Loading"} icon={RefreshCw} />
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="m-0 text-lg font-bold text-slate-950">Workspace Tools</h2>
+            <p className="mt-1 text-sm text-slate-500">Fast access to the pages used most often while handling quotes and cash flow.</p>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {cards.map((card) => (
               <Link
                 key={card.href}
                 href={card.href}
-                style={{
-                  padding: "9px 11px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  background: "#ffffff",
-                  color: "#111827",
-                  textDecoration: "none",
-                  fontWeight: 700,
-                  fontSize: 13,
-                }}
+                className="group flex min-h-28 items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-4 text-slate-950 no-underline shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
               >
-                {card.title}
+                <span className="flex min-w-0 gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-700">
+                    <card.icon size={20} aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold">{card.title}</span>
+                    <span className="mt-1 block text-sm font-normal leading-5 text-slate-500">{card.description}</span>
+                  </span>
+                </span>
+                <ArrowRight className="mt-1 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-slate-700" size={18} aria-hidden="true" />
               </Link>
             ))}
-          </div>
         </div>
-      </section>
+      </div>
 
-      <section style={{ padding: 20, borderRadius: 12, marginBottom: 18 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            alignItems: "flex-start",
-            flexWrap: "wrap",
-            marginBottom: 16,
-          }}
-        >
+      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h2 style={{ margin: "0 0 6px 0" }}>Income and Expenses</h2>
-            <p style={{ margin: 0, color: "#6b7280" }}>
+            <h2 className="m-0 text-lg font-bold text-slate-950">Income and Expenses</h2>
+            <p className="mt-1 text-sm text-slate-500">
               VAT-exclusive net with VAT payments deducted from the VAT balance.
             </p>
           </div>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-end",
-            gap: 10,
-            flexWrap: "wrap",
-            padding: 12,
-            marginBottom: 18,
-            border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            background: "#f9fafb",
-          }}
-        >
-          <div>
-            <label htmlFor="dashboard-date-from" style={{ display: "block", fontSize: 13, color: "#6b7280", marginBottom: 5 }}>
-              From
-            </label>
-            <input
-              id="dashboard-date-from"
-              type="date"
-              value={dateFrom}
-              max={dateTo || undefined}
-              onChange={(event) => setDateFrom(event.target.value)}
-              style={{ padding: "8px 10px" }}
-            />
-          </div>
-          <div>
-            <label htmlFor="dashboard-date-to" style={{ display: "block", fontSize: 13, color: "#6b7280", marginBottom: 5 }}>
-              To
-            </label>
-            <input
-              id="dashboard-date-to"
-              type="date"
-              value={dateTo}
-              min={dateFrom || undefined}
-              onChange={(event) => setDateTo(event.target.value)}
-              style={{ padding: "8px 10px" }}
-            />
-          </div>
-          <button onClick={showThisMonth} style={{ padding: "9px 12px" }}>
-            This Month
-          </button>
-          <button onClick={showThisYear} style={{ padding: "9px 12px" }}>
-            This Year
-          </button>
-          <button
-            onClick={showAllDates}
-            style={{
-              padding: "9px 12px",
-              background: "#ffffff",
-              color: "#111827",
-              border: "1px solid #d1d5db",
-            }}
-          >
-            All Time
-          </button>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(190px, 100%), 1fr))",
-            gap: 12,
-            marginBottom: 18,
-          }}
-        >
-          {[
-            ["Income excl. VAT", dashboard.totalIncomeExclVat],
-            ["Expenses excl. VAT", dashboard.totalExpensesExclVat],
-            ["Operating costs excl. VAT", dashboard.operatingCostsExclVat],
-            ["Net excl. VAT", dashboard.netTotal],
-            ["VAT balance", dashboard.vatBalance],
-          ].map(([label, amount]) => (
-            <div
-              key={label}
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: 8,
-                padding: 14,
-                background: "#f9fafb",
-                minHeight: 82,
-              }}
-            >
-              <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 8 }}>{label}</div>
-              <strong style={{ fontSize: 24 }}>{money(Number(amount))}</strong>
+          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+            <div>
+              <label htmlFor="dashboard-date-from" className="mb-1 block text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                From
+              </label>
+              <input
+                id="dashboard-date-from"
+                type="date"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm"
+              />
             </div>
+            <div>
+              <label htmlFor="dashboard-date-to" className="mb-1 block text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+                To
+              </label>
+              <input
+                id="dashboard-date-to"
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm"
+              />
+            </div>
+            <button onClick={showThisMonth} className="inline-flex h-10 items-center gap-2 !rounded-md !border-slate-900 !bg-slate-900 px-3 text-sm font-bold !text-white">
+              <Filter size={15} aria-hidden="true" />
+              Month
+            </button>
+            <button onClick={showThisYear} className="inline-flex h-10 items-center gap-2 !rounded-md !border-slate-300 !bg-white px-3 text-sm font-bold !text-slate-900">
+              Year
+            </button>
+            <button onClick={showAllDates} className="inline-flex h-10 items-center gap-2 !rounded-md !border-slate-300 !bg-white px-3 text-sm font-bold !text-slate-900">
+              All time
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {summaryCards.map((card) => (
+            <MetricCard key={card.label} {...card} />
           ))}
         </div>
 
-        <div style={{ marginBottom: 18 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
-              marginBottom: 10,
-            }}
-          >
-            <h3 style={{ margin: 0 }}>Owner Cash Balances</h3>
-            <button
-              onClick={exportOwnerTransactionsCsv}
-              style={{
-                padding: "9px 12px",
-                background: "#ffffff",
-                color: "#111827",
-                border: "1px solid #d1d5db",
-                borderRadius: 8,
-                fontWeight: 700,
-              }}
-            >
-              Export Owner Transactions CSV
-            </button>
+        <div className="mb-5 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+          <div className="min-w-0">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="m-0 text-base font-bold text-slate-950">Owner Cash Balances</h3>
+              <button
+                onClick={exportOwnerTransactionsCsv}
+                className="inline-flex h-10 items-center gap-2 !rounded-md !border-slate-300 !bg-white px-3 text-sm font-bold !text-slate-950"
+              >
+                <Download size={16} aria-hidden="true" />
+                Export CSV
+              </button>
+            </div>
+
+            <div className="max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white">
+              <table className="w-full min-w-[820px] border-collapse">
+                <thead>
+                  <tr>
+                    {["Owner", "Balance", "Customer received", "Supplier paid", "Split received", "Split paid"].map(
+                      (heading) => (
+                        <th
+                          key={heading}
+                          className={`border-b border-slate-200 bg-slate-50 px-3 py-3 text-xs font-bold uppercase tracking-[0.08em] text-slate-500 ${
+                            heading === "Owner" ? "text-left" : "text-right"
+                          }`}
+                        >
+                          {heading}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboard.ownerBalances.map((row) => (
+                    <tr key={row.owner} className="hover:bg-slate-50">
+                      <td className="border-b border-slate-100 px-3 py-3 font-bold text-slate-950">
+                        <span className="inline-flex items-center gap-2">
+                          <WalletCards size={16} className="text-slate-400" aria-hidden="true" />
+                          {row.owner}
+                        </span>
+                      </td>
+                      <td className={`border-b border-slate-100 px-3 py-3 text-right font-extrabold ${row.balance < 0 ? "text-red-700" : "text-slate-950"}`}>
+                        {money(row.balance)}
+                      </td>
+                      <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
+                        {money(row.customerReceived)}
+                      </td>
+                      <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
+                        {money(row.supplierPaid)}
+                      </td>
+                      <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
+                        {money(row.splitReceived)}
+                      </td>
+                      <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
+                        {money(row.splitPaid)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          <div
-            style={{
-              overflowX: "auto",
-              border: "1px solid #e5e7eb",
-              borderRadius: 8,
-              background: "#ffffff",
-            }}
-          >
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
-              <thead>
-                <tr>
-                  {["Owner", "Balance", "Customer received", "Supplier paid", "Split received", "Split paid"].map(
-                    (heading) => (
-                      <th
-                        key={heading}
-                        style={{
-                          textAlign: heading === "Owner" ? "left" : "right",
-                          padding: "10px 12px",
-                          borderBottom: "1px solid #e5e7eb",
-                          color: "#6b7280",
-                          fontSize: 13,
-                          background: "#f9fafb",
-                        }}
-                      >
-                        {heading}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.ownerBalances.map((row) => (
-                  <tr key={row.owner}>
-                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", fontWeight: 700 }}>
-                      {row.owner}
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px",
-                        borderBottom: "1px solid #f1f5f9",
-                        textAlign: "right",
-                        fontWeight: 800,
-                        color: row.balance < 0 ? "#991b1b" : "#111827",
-                      }}
-                    >
-                      {money(row.balance)}
-                    </td>
-                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>
-                      {money(row.customerReceived)}
-                    </td>
-                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>
-                      {money(row.supplierPaid)}
-                    </td>
-                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>
-                      {money(row.splitReceived)}
-                    </td>
-                    <td style={{ padding: "12px", borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>
-                      {money(row.splitPaid)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <RecentActivity rows={latestOwnerTransactions} />
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))",
-            gap: 14,
-          }}
-        >
+        <div className="grid gap-4 lg:grid-cols-3">
           <BreakdownPanel title="Income by Status" rows={dashboard.statusBreakdown} />
           <BreakdownPanel title="Expenses by Category" rows={dashboard.categoryBreakdown} />
 
-          <div
-            style={{
-              border: "1px solid #e5e7eb",
-              borderRadius: 8,
-              padding: 14,
-              background: "#ffffff",
-            }}
-          >
-            <h3 style={{ margin: "0 0 12px 0" }}>Monthly Breakdown</h3>
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <h3 className="mb-3 text-base font-bold text-slate-950">Monthly Breakdown</h3>
             {dashboard.monthlyBreakdown.length === 0 ? (
-              <p style={{ margin: 0, color: "#6b7280" }}>No invoice or expense data yet.</p>
+              <p className="m-0 text-sm text-slate-500">No invoice or expense data yet.</p>
             ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {dashboard.monthlyBreakdown.map((row) => (
-                  <div
-                    key={row.month}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "0.8fr 1fr 1fr",
-                      gap: 10,
-                      alignItems: "center",
-                      borderBottom: "1px solid #f1f5f9",
-                      paddingBottom: 8,
-                    }}
-                  >
-                    <strong>{row.month}</strong>
-                    <span style={{ color: "#065f46", textAlign: "right" }}>{money(row.income)}</span>
-                    <span style={{ color: "#991b1b", textAlign: "right" }}>{money(row.expenses)}</span>
-                  </div>
-                ))}
+              <div className="grid gap-3">
+                {dashboard.monthlyBreakdown.map((row) => {
+                  const maxAmount = Math.max(row.income, row.expenses, 1);
+                  const incomeWidth = `${Math.max((row.income / maxAmount) * 100, row.income > 0 ? 8 : 0)}%`;
+                  const expenseWidth = `${Math.max((row.expenses / maxAmount) * 100, row.expenses > 0 ? 8 : 0)}%`;
+
+                  return (
+                    <div key={row.month} className="border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <strong className="text-sm text-slate-950">{row.month}</strong>
+                        <span className="text-xs font-semibold text-slate-500">
+                          Net {money(row.income - row.expenses)}
+                        </span>
+                      </div>
+                      <div className="grid gap-2">
+                        <BarRow label="Income" value={money(row.income)} width={incomeWidth} colorClass="bg-emerald-600" />
+                        <BarRow label="Expenses" value={money(row.expenses)} width={expenseWidth} colorClass="bg-red-600" />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
         {dashboardMessage ? (
-          <div
-            style={{
-              marginTop: 16,
-              background: "#fff7ed",
-              color: "#9a3412",
-              border: "1px solid #fed7aa",
-              padding: 12,
-              borderRadius: 8,
-            }}
-          >
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
             {dashboardMessage}
           </div>
         ) : null}
-      </section>
-
+      </div>
     </main>
+  );
+}
+
+function DashboardFact({ label, value, icon: Icon }: { label: string; value: string; icon: LucideIcon }) {
+  return (
+    <div className="flex min-h-20 items-center gap-3 bg-white px-5 py-4">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+        <Icon size={18} aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-xs font-bold uppercase tracking-[0.08em] text-slate-500">{label}</span>
+        <span className="mt-1 block truncate text-sm font-bold text-slate-950">{value}</span>
+      </span>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  amount,
+  icon: Icon,
+  tone,
+  caption,
+}: {
+  label: string;
+  amount: number;
+  icon: LucideIcon;
+  tone: "green" | "red" | "amber" | "blue";
+  caption: string;
+}) {
+  const toneClasses = {
+    green: "bg-emerald-50 text-emerald-700 border-emerald-100",
+    red: "bg-red-50 text-red-700 border-red-100",
+    amber: "bg-amber-50 text-amber-700 border-amber-100",
+    blue: "bg-sky-50 text-sky-700 border-sky-100",
+  }[tone];
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-bold text-slate-600">{label}</div>
+          <p className="mt-1 min-h-10 text-xs leading-5 text-slate-500">{caption}</p>
+        </div>
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md border ${toneClasses}`}>
+          <Icon size={19} aria-hidden="true" />
+        </span>
+      </div>
+      <strong className={`block text-2xl font-extrabold tabular-nums ${amount < 0 ? "text-red-700" : "text-slate-950"}`}>
+        {money(amount)}
+      </strong>
+    </div>
+  );
+}
+
+function RecentActivity({ rows }: { rows: OwnerTransaction[] }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="m-0 text-base font-bold text-slate-950">Recent Owner Activity</h3>
+        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
+          Latest 8
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="m-0 text-sm text-slate-500">No owner transactions in this range.</p>
+      ) : (
+        <div className="grid gap-2">
+          {rows.map((row) => (
+            <div key={`${row.owner}-${row.createdAt}-${row.type}-${row.amount}`} className="rounded-md border border-slate-200 bg-white p-3">
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-bold text-slate-950">{row.counterparty}</div>
+                  <div className="mt-1 text-xs text-slate-500">{row.date} - {row.owner}</div>
+                </div>
+                <strong className={`shrink-0 text-sm tabular-nums ${row.amount < 0 ? "text-red-700" : "text-emerald-700"}`}>
+                  {money(row.amount)}
+                </strong>
+              </div>
+              <div className="truncate text-xs text-slate-500">{row.type} - {row.category}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BarRow({ label, value, width, colorClass }: { label: string; value: string; width: string; colorClass: string }) {
+  return (
+    <div className="grid grid-cols-[72px_minmax(0,1fr)_88px] items-center gap-2 text-xs">
+      <span className="font-semibold text-slate-500">{label}</span>
+      <span className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <span className={`block h-full rounded-full ${colorClass}`} style={{ width }} />
+      </span>
+      <span className="text-right font-bold tabular-nums text-slate-700">{value}</span>
+    </div>
   );
 }
 
@@ -941,30 +1078,26 @@ function BreakdownPanel({ title, rows }: { title: string; rows: BreakdownRow[] }
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
 
   return (
-    <div
-      style={{
-        border: "1px solid #e5e7eb",
-        borderRadius: 12,
-        padding: 16,
-        background: "#ffffff",
-      }}
-    >
-      <h3 style={{ marginBottom: 12 }}>{title}</h3>
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="m-0 text-base font-bold text-slate-950">{title}</h3>
+        <span className="text-xs font-bold uppercase tracking-[0.08em] text-slate-400">{money(total)}</span>
+      </div>
       {rows.length === 0 ? (
-        <p style={{ margin: 0, color: "#6b7280" }}>No data yet.</p>
+        <p className="m-0 text-sm text-slate-500">No data yet.</p>
       ) : (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div className="grid gap-3">
           {rows.map((row) => {
             const width = total > 0 ? `${Math.max((row.amount / total) * 100, 6)}%` : "0%";
 
             return (
               <div key={row.label}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
-                  <span>{row.label}</span>
-                  <strong>{money(row.amount)}</strong>
+                <div className="mb-1.5 flex justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-semibold text-slate-700">{row.label}</span>
+                  <strong className="shrink-0 tabular-nums text-slate-950">{money(row.amount)}</strong>
                 </div>
-                <div style={{ height: 8, borderRadius: 999, background: "#f3f4f6", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width, background: "#111827", borderRadius: 999 }} />
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-slate-900" style={{ width }} />
                 </div>
               </div>
             );

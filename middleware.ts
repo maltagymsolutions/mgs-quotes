@@ -79,5 +79,6 @@ export const config = {
     "/invoices",
     "/invoices/:path*",
     "/expenses",
+    "/aps",
   ],
 };

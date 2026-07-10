@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { AppPage } from "@/src/components/app-page";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type UserInfo = {
@@ -27,6 +27,7 @@ export default function ClientsPage() {
   const [message, setMessage] = useState("");
   const [clients, setClients] = useState<Client[]>([]);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
   const [privateName, setPrivateName] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -36,6 +37,20 @@ export default function ClientsPage() {
   const [address, setAddress] = useState("");
   const [vatNumber, setVatNumber] = useState("");
   const [isBusinessClient, setIsBusinessClient] = useState(false);
+
+  const loadClients = useCallback(async function loadClients() {
+    const { data, error } = await supabase
+      .from("clients")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setClients(data || []);
+  }, [supabase]);
 
   useEffect(() => {
     async function loadUser() {
@@ -55,22 +70,14 @@ export default function ClientsPage() {
   }, [supabase]);
 
   useEffect(() => {
-    if (user) loadClients();
-  }, [user]);
+    if (!user) return;
 
-  async function loadClients() {
-    const { data, error } = await supabase
-      .from("clients")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const timer = window.setTimeout(() => {
+      loadClients();
+    }, 0);
 
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setClients(data || []);
-  }
+    return () => window.clearTimeout(timer);
+  }, [loadClients, user]);
 
   async function signOut() {
     const { error } = await supabase.auth.signOut();
@@ -107,6 +114,7 @@ export default function ClientsPage() {
   }
 
   function startEditing(client: Client) {
+    setSelectedClient(client);
     setEditingClientId(client.id);
     setPrivateName(client.private_name || "");
     setCompanyName(client.company_name || "");
@@ -116,6 +124,10 @@ export default function ClientsPage() {
     setAddress(client.address || "");
     setVatNumber(client.vat_number || "");
     setIsBusinessClient(client.is_business_client);
+  }
+
+  function viewClient(client: Client) {
+    setSelectedClient(client);
   }
 
   function clearForm() {
@@ -160,21 +172,68 @@ export default function ClientsPage() {
   }
 
   return (
-    <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1000 }}>
-      <div style={{ marginBottom: 20 }}>
-        <Link href="/">← Back to dashboard</Link>
-      </div>
+    <AppPage
+      title="Clients"
+      description="Manage private and business client records, contacts, VAT details, and addresses."
+      maxWidthClass="max-w-6xl"
+      actions={
+        <div className="rounded-md border border-white/15 px-3 py-2 text-sm text-slate-200">
+          <span className="mr-3">{user?.email || "-"}</span>
+          <button onClick={signOut} className="!rounded-md !border-white/20 !bg-transparent px-3 py-1.5 text-sm font-bold !text-white">
+            Log out
+          </button>
+        </div>
+      }
+    >
 
-      <h1>Clients</h1>
-
-      <div style={{ marginTop: 12, marginBottom: 24 }}>
-        <p>
-          Logged in as: <strong>{user?.email}</strong>
-        </p>
-        <button onClick={signOut} style={{ padding: "10px 14px" }}>
-          Log Out
-        </button>
-      </div>
+      {selectedClient ? (
+        <section style={{ border: "1px solid #cbd5e1", padding: 18, borderRadius: 12, marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <h2 style={{ marginBottom: 6 }}>
+                {selectedClient.company_name || selectedClient.private_name || "Client details"}
+              </h2>
+              <p style={{ margin: 0, color: "#64748b" }}>
+                {selectedClient.is_business_client ? "Business client" : "Private client"}
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => startEditing(selectedClient)} style={{ padding: "8px 12px" }}>
+                Edit
+              </button>
+              <button
+                onClick={() => setSelectedClient(null)}
+                style={{
+                  padding: "8px 12px",
+                  background: "#ffffff",
+                  color: "#111827",
+                  border: "1px solid #d1d5db",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))",
+              gap: 14,
+              marginTop: 16,
+            }}
+          >
+            <ClientDetail label="Private name" value={selectedClient.private_name} />
+            <ClientDetail label="Company" value={selectedClient.company_name} />
+            <ClientDetail label="Contact person" value={selectedClient.contact_person} />
+            <ClientDetail label="Email" value={selectedClient.email} />
+            <ClientDetail label="Phone" value={selectedClient.phone} />
+            <ClientDetail label="VAT number" value={selectedClient.vat_number} />
+            <div style={{ gridColumn: "1 / -1" }}>
+              <ClientDetail label="Address" value={selectedClient.address} />
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section style={{ border: "1px solid #ccc", padding: 16, borderRadius: 8, marginBottom: 24 }}>
         <h2>{editingClientId ? "Edit Client" : "Add Client"}</h2>
@@ -244,40 +303,64 @@ export default function ClientsPage() {
         {clients.length === 0 ? (
           <p>No clients yet.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Private Name</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Company</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Contact</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Email</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Type</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {clients.map((client) => (
-                <tr key={client.id}>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{client.private_name}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{client.company_name}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{client.contact_person}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{client.email}</td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {client.is_business_client ? "Business" : "Private"}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    <button onClick={() => startEditing(client)} style={{ padding: "6px 10px" }}>
-                      Edit
-                    </button>
-                  </td>
+          <div style={{ maxWidth: "100%", overflowX: "auto" }}>
+            <table style={{ width: "100%", minWidth: 760, borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Private Name</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Company</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Contact</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Email</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Type</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {clients.map((client) => (
+                  <tr key={client.id}>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{client.private_name}</td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{client.company_name}</td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{client.contact_person}</td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{client.email}</td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      {client.is_business_client ? "Business" : "Private"}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button onClick={() => viewClient(client)} style={{ padding: "6px 10px" }}>
+                          View
+                        </button>
+                        <button
+                          onClick={() => startEditing(client)}
+                          style={{
+                            padding: "6px 10px",
+                            background: "#ffffff",
+                            color: "#111827",
+                            border: "1px solid #d1d5db",
+                          }}
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
       {message ? <p style={{ marginTop: 16 }}>{message}</p> : null}
-    </main>
+    </AppPage>
+  );
+}
+
+function ClientDetail({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f8fafc" }}>
+      <div style={{ color: "#64748b", fontSize: 13, marginBottom: 4 }}>{label}</div>
+      <strong style={{ whiteSpace: "pre-wrap" }}>{value || "-"}</strong>
+    </div>
   );
 }

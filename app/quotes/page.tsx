@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { AppPage } from "@/src/components/app-page";
 import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import { INVENTORY_CATEGORIES } from "@/src/lib/inventory-categories";
@@ -121,13 +122,6 @@ export default function QuotesPage() {
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState("All");
   const [inventorySortBy, setInventorySortBy] = useState("name-asc");
 
-  useEffect(() => {
-    loadClients();
-    loadInventory();
-    loadQuotes();
-    loadCompanySettings();
-  }, []);
-
   async function loadClients() {
     const { data, error } = await supabase
       .from("clients")
@@ -184,6 +178,17 @@ export default function QuotesPage() {
 
     setCompanySettings(data);
   }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      loadClients();
+      loadInventory();
+      loadQuotes();
+      loadCompanySettings();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const selectedClient = useMemo(
     () => clients.find((c) => c.id === selectedClientId) || null,
@@ -739,12 +744,21 @@ export default function QuotesPage() {
   }
 
   return (
-    <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1100 }}>
-      <div style={{ marginBottom: 20 }}>
-        <Link href="/">← Back to dashboard</Link>
-      </div>
-
-      <h1>Quotes</h1>
+    <AppPage
+      title="Quotes"
+      description="Build customer quotes from inventory, discounts, deposits, and delivery details."
+      maxWidthClass="max-w-6xl"
+      actions={
+        <>
+          <Link href="/clients" className="inline-flex min-h-10 items-center rounded-md border border-white/20 px-3 text-sm font-bold !text-white no-underline">
+            Clients
+          </Link>
+          <Link href="/inventory" className="inline-flex min-h-10 items-center rounded-md border border-white/20 px-3 text-sm font-bold !text-white no-underline">
+            Inventory
+          </Link>
+        </>
+      }
+    >
 
       <div style={{ marginTop: 12, marginBottom: 20 }}>
         <p>
@@ -1326,6 +1340,6 @@ export default function QuotesPage() {
       </section>
 
       {message ? <p style={{ marginTop: 16 }}>{message}</p> : null}
-    </main>
+    </AppPage>
   );
 }

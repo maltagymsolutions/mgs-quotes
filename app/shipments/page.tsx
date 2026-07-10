@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppPage } from "@/src/components/app-page";
 import {
   amountExcludingVat,
   calculateShipmentProfit,
@@ -400,17 +401,20 @@ export default function ShipmentsPage() {
   }
 
   return (
-    <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1180 }}>
-      <div style={{ marginBottom: 20 }}>
-        <Link href="/">← Back to dashboard</Link>
-      </div>
-
-      <div style={{ marginBottom: 24 }}>
-        <h1>Shipments</h1>
-        <p style={{ margin: 0, color: "#4b5563" }}>
-          Group customer invoices and supplier expenses into one shipment.
-        </p>
-      </div>
+    <AppPage
+      title="Shipments"
+      description="Group customer invoices and supplier expenses into one shipment profitability view."
+      actions={
+        <>
+          <Link href="/invoices" className="inline-flex min-h-10 items-center rounded-md border border-white/20 px-3 text-sm font-bold !text-white no-underline">
+            Invoices
+          </Link>
+          <Link href="/expenses" className="inline-flex min-h-10 items-center rounded-md border border-white/20 px-3 text-sm font-bold !text-white no-underline">
+            Expenses
+          </Link>
+        </>
+      }
+    >
 
       {message ? (
         <div
@@ -754,6 +758,6 @@ export default function ShipmentsPage() {
           </section>
         </>
       ) : null}
-    </main>
+    </AppPage>
   );
 }

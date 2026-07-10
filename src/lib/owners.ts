@@ -4,8 +4,22 @@ export type Owner = (typeof OWNERS)[number];
 
 export const DEFAULT_OWNER: Owner = "Luke";
 
+export const BANK_ACCOUNTS = ["APS", ...OWNERS] as const;
+
+export type BankAccount = (typeof BANK_ACCOUNTS)[number];
+
+export const DEFAULT_BANK_ACCOUNT: BankAccount = "APS";
+
 export function resolveOwner(value: string | null | undefined): Owner {
   return OWNERS.includes(value as Owner) ? (value as Owner) : DEFAULT_OWNER;
+}
+
+export function isOwner(value: string | null | undefined): value is Owner {
+  return OWNERS.includes(value as Owner);
+}
+
+export function resolveBankAccount(value: string | null | undefined): BankAccount {
+  return BANK_ACCOUNTS.includes(value as BankAccount) ? (value as BankAccount) : DEFAULT_BANK_ACCOUNT;
 }
 
 export function resolveOwnerSplit(value: unknown, fallbackOwner: Owner = DEFAULT_OWNER): Owner[] {

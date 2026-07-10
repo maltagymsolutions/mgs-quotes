@@ -1,9 +1,20 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppPage } from "@/src/components/app-page";
 import { buildCsv, downloadCsv } from "@/src/lib/csv";
-import { DEFAULT_OWNER, Owner, OWNERS, resolveOwner, resolveOwnerSplit } from "@/src/lib/owners";
+import {
+  BankAccount,
+  BANK_ACCOUNTS,
+  DEFAULT_BANK_ACCOUNT,
+  DEFAULT_OWNER,
+  isOwner,
+  Owner,
+  OWNERS,
+  resolveBankAccount,
+  resolveOwner,
+  resolveOwnerSplit,
+} from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type UserInfo = {
@@ -19,7 +30,7 @@ type Expense = {
   category: ExpenseCategory;
   vat_rate: number;
   amount_incl_vat: number;
-  bank_account?: Owner | null;
+  bank_account?: BankAccount | null;
   paid_by_owner: Owner | null;
   split_owners: Owner[] | null;
 };
@@ -82,11 +93,16 @@ export default function ExpensesPage() {
   const [category, setCategory] = useState<ExpenseCategory>("Equipment");
   const [vatRate, setVatRate] = useState(18);
   const [amountInclVat, setAmountInclVat] = useState("");
+  const [bankAccount, setBankAccount] = useState<BankAccount>(DEFAULT_BANK_ACCOUNT);
   const [paidByOwner, setPaidByOwner] = useState<Owner>(DEFAULT_OWNER);
   const [splitOwners, setSplitOwners] = useState<Owner[]>([DEFAULT_OWNER]);
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [supplierFilter, setSupplierFilter] = useState("All");
+  const [bankAccountFilter, setBankAccountFilter] = useState("All");
   const [ownerFilter, setOwnerFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const loadExpenses = useCallback(async function loadExpenses() {
     const { data, error } = await supabase
@@ -149,12 +165,14 @@ export default function ExpensesPage() {
     setCategory("Equipment");
     setVatRate(18);
     setAmountInclVat("");
+    setBankAccount(DEFAULT_BANK_ACCOUNT);
     setPaidByOwner(DEFAULT_OWNER);
     setSplitOwners([DEFAULT_OWNER]);
   }
 
   function startEditing(expense: Expense) {
-    const owner = resolveOwner(expense.paid_by_owner || expense.bank_account);
+    const account = resolveBankAccount(expense.bank_account);
+    const owner = resolveOwner(expense.paid_by_owner);
 
     setEditingExpenseId(expense.id);
     setExpenseDate(expense.expense_date);
@@ -163,8 +181,17 @@ export default function ExpensesPage() {
     setCategory(expense.category);
     setVatRate(Number(expense.vat_rate));
     setAmountInclVat(String(expense.amount_incl_vat ?? ""));
+    setBankAccount(account);
     setPaidByOwner(owner);
     setSplitOwners(resolveOwnerSplit(expense.split_owners, owner));
+  }
+
+  function updateBankAccount(account: BankAccount) {
+    setBankAccount(account);
+
+    if (isOwner(account)) {
+      updatePaidByOwner(account);
+    }
   }
 
   function updatePaidByOwner(owner: Owner) {
@@ -202,7 +229,10 @@ export default function ExpensesPage() {
 
     setMessage(editingExpenseId ? "Updating expense..." : "Saving expense...");
 
-    const normalizedSplitOwners = Array.from(new Set([paidByOwner, ...splitOwners]));
+    const normalizedPaidByOwner = isOwner(bankAccount) ? paidByOwner : DEFAULT_OWNER;
+    const normalizedSplitOwners = isOwner(bankAccount)
+      ? Array.from(new Set([paidByOwner, ...splitOwners]))
+      : [DEFAULT_OWNER];
     const normalizedVatRate = category === "VAT" ? 0 : vatRate;
 
     const payload = {
@@ -212,8 +242,8 @@ export default function ExpensesPage() {
       category,
       vat_rate: normalizedVatRate,
       amount_incl_vat: Number(amountInclVat || 0),
-      bank_account: paidByOwner,
-      paid_by_owner: paidByOwner,
+      bank_account: bankAccount,
+      paid_by_owner: normalizedPaidByOwner,
       split_owners: normalizedSplitOwners,
     };
 
@@ -260,13 +290,32 @@ export default function ExpensesPage() {
   const filteredExpenses = useMemo(() => {
     let rows = [...expenses];
 
+    if (dateFrom) {
+      rows = rows.filter((expense) => expense.expense_date >= dateFrom);
+    }
+
+    if (dateTo) {
+      rows = rows.filter((expense) => expense.expense_date <= dateTo);
+    }
+
     if (categoryFilter !== "All") {
       rows = rows.filter((expense) => expense.category === categoryFilter);
     }
 
+    if (supplierFilter !== "All") {
+      rows = rows.filter((expense) => (expense.supplier || "No supplier") === supplierFilter);
+    }
+
+    if (bankAccountFilter !== "All") {
+      rows = rows.filter((expense) => resolveBankAccount(expense.bank_account) === bankAccountFilter);
+    }
+
     if (ownerFilter !== "All") {
       rows = rows.filter((expense) => {
-        const paidBy = resolveOwner(expense.paid_by_owner || expense.bank_account);
+        const account = resolveBankAccount(expense.bank_account);
+        if (!isOwner(account)) return false;
+
+        const paidBy = resolveOwner(expense.paid_by_owner);
         const splitBetween = resolveOwnerSplit(expense.split_owners, paidBy);
 
         return paidBy === ownerFilter || splitBetween.includes(ownerFilter as Owner);
@@ -280,8 +329,9 @@ export default function ExpensesPage() {
           expense.description.toLowerCase().includes(q) ||
           (expense.supplier || "").toLowerCase().includes(q) ||
           expense.category.toLowerCase().includes(q) ||
-          resolveOwner(expense.paid_by_owner || expense.bank_account).toLowerCase().includes(q) ||
-          resolveOwnerSplit(expense.split_owners, resolveOwner(expense.paid_by_owner || expense.bank_account))
+          resolveBankAccount(expense.bank_account).toLowerCase().includes(q) ||
+          resolveOwner(expense.paid_by_owner).toLowerCase().includes(q) ||
+          resolveOwnerSplit(expense.split_owners, resolveOwner(expense.paid_by_owner))
             .join(" ")
             .toLowerCase()
             .includes(q)
@@ -289,10 +339,10 @@ export default function ExpensesPage() {
     }
 
     return rows;
-  }, [expenses, ownerFilter, categoryFilter, searchTerm]);
+  }, [expenses, bankAccountFilter, categoryFilter, dateFrom, dateTo, ownerFilter, searchTerm, supplierFilter]);
 
   const summary = useMemo(() => {
-    return expenses.reduce(
+    return filteredExpenses.reduce(
       (totals, expense) => {
         const amountIncl = Number(expense.amount_incl_vat || 0);
         const calculated = calculateExpense(amountIncl, Number(expense.vat_rate || 0));
@@ -305,7 +355,30 @@ export default function ExpensesPage() {
       },
       { amountInclVat: 0, amountExclVat: 0, vatAmount: 0 }
     );
-  }, [expenses]);
+  }, [filteredExpenses]);
+
+  const supplierOptions = useMemo(
+    () =>
+      Array.from(new Set(expenses.map((expense) => expense.supplier || "No supplier"))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [expenses]
+  );
+
+  const filteredCategoryTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+
+    filteredExpenses.forEach((expense) => {
+      totals.set(
+        expense.category,
+        round2((totals.get(expense.category) || 0) + Number(expense.amount_incl_vat || 0))
+      );
+    });
+
+    return Array.from(totals.entries())
+      .map(([label, amount]) => ({ label, amount }))
+      .sort((a, b) => b.amount - a.amount || a.label.localeCompare(b.label));
+  }, [filteredExpenses]);
 
   function exportExpensesCsv() {
     if (filteredExpenses.length === 0) {
@@ -318,7 +391,8 @@ export default function ExpensesPage() {
       "Supplier",
       "Description",
       "Category",
-      "Paid By",
+      "Paid From",
+      "Direct Owner",
       "Split Between",
       "VAT %",
       "Amount Excl. VAT",
@@ -328,7 +402,8 @@ export default function ExpensesPage() {
     ];
 
     const rows = filteredExpenses.map((expense) => {
-      const paidBy = resolveOwner(expense.paid_by_owner || expense.bank_account);
+      const account = resolveBankAccount(expense.bank_account);
+      const paidBy = resolveOwner(expense.paid_by_owner);
       const splitBetween = resolveOwnerSplit(expense.split_owners, paidBy);
       const calculated = calculateExpense(
         Number(expense.amount_incl_vat || 0),
@@ -340,8 +415,9 @@ export default function ExpensesPage() {
         "Supplier": expense.supplier || "",
         "Description": expense.description,
         "Category": expense.category,
-        "Paid By": paidBy,
-        "Split Between": splitBetween.join("; "),
+        "Paid From": account,
+        "Direct Owner": isOwner(account) ? paidBy : "",
+        "Split Between": isOwner(account) ? splitBetween.join("; ") : "",
         "VAT %": Number(expense.vat_rate || 0),
         "Amount Excl. VAT": calculated.amountExclVat.toFixed(2),
         "VAT Amount": calculated.vatAmount.toFixed(2),
@@ -355,44 +431,18 @@ export default function ExpensesPage() {
   }
 
   return (
-    <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1180 }}>
-      <div style={{ marginBottom: 20 }}>
-        <Link href="/">← Back to dashboard</Link>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 16,
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          marginBottom: 24,
-        }}
-      >
-        <div>
-          <h1 style={{ marginBottom: 8 }}>Expenses</h1>
-          <p style={{ margin: 0, color: "#4b5563" }}>
-            Record business expenses and track VAT by category.
-          </p>
-        </div>
-
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 14,
-            padding: 14,
-            minWidth: 240,
-          }}
-        >
-          <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 6 }}>Logged in as</div>
-          <div style={{ fontWeight: 700, marginBottom: 12 }}>{user?.email || "-"}</div>
-          <button onClick={signOut} style={{ padding: "10px 14px" }}>
-            Log Out
+    <AppPage
+      title="Expenses"
+      description="Record supplier costs, VAT, APS payments, and direct owner-paid expenses."
+      actions={
+        <div className="rounded-md border border-white/15 px-3 py-2 text-sm text-slate-200">
+          <span className="mr-3">{user?.email || "-"}</span>
+          <button onClick={signOut} className="!rounded-md !border-white/20 !bg-transparent px-3 py-1.5 text-sm font-bold !text-white">
+            Log out
           </button>
         </div>
-      </div>
+      }
+    >
 
       <section style={{ padding: 20, borderRadius: 16, marginBottom: 24 }}>
         <h2>{editingExpenseId ? "Edit Expense" : "Add Expense"}</h2>
@@ -490,55 +540,86 @@ export default function ExpensesPage() {
             </div>
 
             <div>
-              <label>Paid By</label>
+              <label>Paid From</label>
               <select
                 style={{ width: "100%", padding: 12, marginTop: 6 }}
-                value={paidByOwner}
-                onChange={(e) => updatePaidByOwner(e.target.value as Owner)}
+                value={bankAccount}
+                onChange={(e) => updateBankAccount(e.target.value as BankAccount)}
               >
-                {OWNERS.map((owner) => (
-                  <option key={owner} value={owner}>
-                    {owner}
+                {BANK_ACCOUNTS.map((account) => (
+                  <option key={account} value={account}>
+                    {account}
                   </option>
                 ))}
               </select>
             </div>
+
+            {isOwner(bankAccount) ? (
+              <div>
+                <label>Owner Who Paid</label>
+                <select
+                  style={{ width: "100%", padding: 12, marginTop: 6 }}
+                  value={paidByOwner}
+                  onChange={(e) => updatePaidByOwner(e.target.value as Owner)}
+                >
+                  {OWNERS.map((owner) => (
+                    <option key={owner} value={owner}>
+                      {owner}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
           </div>
 
-          <div>
+          {isOwner(bankAccount) ? (
+            <div>
               <label>Split Between</label>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginTop: 8,
+                }}
+              >
+                {OWNERS.map((owner) => (
+                  <label
+                    key={owner}
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                      border: "1px solid #d1d5db",
+                      borderRadius: 8,
+                      padding: "9px 11px",
+                      background: splitOwners.includes(owner) ? "#f3f4f6" : "#ffffff",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={splitOwners.includes(owner)}
+                      disabled={owner === paidByOwner}
+                      onChange={() => toggleSplitOwner(owner)}
+                    />
+                    {owner}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
             <div
               style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                marginTop: 8,
+                border: "1px solid #e5e7eb",
+                borderRadius: 12,
+                background: "#f9fafb",
+                color: "#4b5563",
+                padding: 12,
               }}
             >
-              {OWNERS.map((owner) => (
-                <label
-                  key={owner}
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    border: "1px solid #d1d5db",
-                    borderRadius: 8,
-                    padding: "9px 11px",
-                    background: splitOwners.includes(owner) ? "#f3f4f6" : "#ffffff",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={splitOwners.includes(owner)}
-                    disabled={owner === paidByOwner}
-                    onChange={() => toggleSplitOwner(owner)}
-                  />
-                  {owner}
-                </label>
-              ))}
+              APS expenses are treated as company-paid and are not added to owner cash balances.
             </div>
-          </div>
+          )}
 
           <div
             style={{
@@ -565,7 +646,7 @@ export default function ExpensesPage() {
             </div>
             <div>
               <div style={{ color: "#6b7280", fontSize: 13 }}>Split share</div>
-              <strong>{money(Number(amountInclVat || 0) / splitOwners.length)}</strong>
+              <strong>{isOwner(bankAccount) ? money(Number(amountInclVat || 0) / splitOwners.length) : "-"}</strong>
             </div>
           </div>
 
@@ -603,7 +684,9 @@ export default function ExpensesPage() {
         >
           <div>
             <h2 style={{ marginBottom: 6 }}>Expense List</h2>
-            <p style={{ margin: 0, color: "#6b7280" }}>{expenses.length} expense(s)</p>
+            <p style={{ margin: 0, color: "#6b7280" }}>
+              {filteredExpenses.length} of {expenses.length} expense(s)
+            </p>
           </div>
 
           <button
@@ -629,15 +712,15 @@ export default function ExpensesPage() {
             }}
           >
             <div>
-              <div style={{ color: "#6b7280", fontSize: 13 }}>Total incl. VAT</div>
+              <div style={{ color: "#6b7280", fontSize: 13 }}>Filtered incl. VAT</div>
               <strong>{money(summary.amountInclVat)}</strong>
             </div>
             <div>
-              <div style={{ color: "#6b7280", fontSize: 13 }}>Total excl. VAT</div>
+              <div style={{ color: "#6b7280", fontSize: 13 }}>Filtered excl. VAT</div>
               <strong>{money(summary.amountExclVat)}</strong>
             </div>
             <div>
-              <div style={{ color: "#6b7280", fontSize: 13 }}>VAT paid</div>
+              <div style={{ color: "#6b7280", fontSize: 13 }}>Filtered VAT</div>
               <strong>{money(summary.vatAmount)}</strong>
             </div>
           </div>
@@ -651,6 +734,28 @@ export default function ExpensesPage() {
             marginBottom: 16,
           }}
         >
+          <div>
+            <label>From</label>
+            <input
+              type="date"
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label>To</label>
+            <input
+              type="date"
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </div>
+
           <div>
             <label>Search</label>
             <input
@@ -678,6 +783,38 @@ export default function ExpensesPage() {
           </div>
 
           <div>
+            <label>Supplier / Retailer</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={supplierFilter}
+              onChange={(e) => setSupplierFilter(e.target.value)}
+            >
+              <option value="All">All suppliers</option>
+              {supplierOptions.map((supplierName) => (
+                <option key={supplierName} value={supplierName}>
+                  {supplierName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label>Paid From</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={bankAccountFilter}
+              onChange={(e) => setBankAccountFilter(e.target.value)}
+            >
+              <option value="All">All accounts</option>
+              {BANK_ACCOUNTS.map((account) => (
+                <option key={account} value={account}>
+                  {account}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label>Owner</label>
             <select
               style={{ width: "100%", padding: 12, marginTop: 6 }}
@@ -693,6 +830,32 @@ export default function ExpensesPage() {
             </select>
           </div>
         </div>
+
+        {filteredCategoryTotals.length > 0 ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))",
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            {filteredCategoryTotals.map((row) => (
+              <div
+                key={row.label}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 12,
+                  padding: 12,
+                  background: "#f9fafb",
+                }}
+              >
+                <div style={{ color: "#6b7280", fontSize: 13, marginBottom: 4 }}>{row.label}</div>
+                <strong>{money(row.amount)}</strong>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         {filteredExpenses.length === 0 ? (
           <div
@@ -714,7 +877,8 @@ export default function ExpensesPage() {
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Supplier</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Description</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Category</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Paid By</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Paid From</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Direct Owner</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Split Between</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>VAT %</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Excl. VAT</th>
@@ -730,7 +894,8 @@ export default function ExpensesPage() {
                     Number(expense.amount_incl_vat || 0),
                     Number(expense.vat_rate || 0)
                   );
-                  const paidBy = resolveOwner(expense.paid_by_owner || expense.bank_account);
+                  const account = resolveBankAccount(expense.bank_account);
+                  const paidBy = resolveOwner(expense.paid_by_owner);
                   const splitBetween = resolveOwnerSplit(expense.split_owners, paidBy);
 
                   return (
@@ -740,10 +905,13 @@ export default function ExpensesPage() {
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.description}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.category}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
-                        {paidBy}
+                        {account}
                       </td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
-                        {splitBetween.join(", ")}
+                        {isOwner(account) ? paidBy : "-"}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                        {isOwner(account) ? splitBetween.join(", ") : "-"}
                       </td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, textAlign: "right" }}>
                         {Number(expense.vat_rate)}%
@@ -806,6 +974,6 @@ export default function ExpensesPage() {
           {message}
         </div>
       ) : null}
-    </main>
+    </AppPage>
   );
 }

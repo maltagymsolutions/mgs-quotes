@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DEFAULT_OWNER, Owner, OWNERS, resolveOwner } from "@/src/lib/owners";
+import { AppPage } from "@/src/components/app-page";
+import {
+  BankAccount,
+  BANK_ACCOUNTS,
+  DEFAULT_BANK_ACCOUNT,
+  DEFAULT_OWNER,
+  isOwner,
+  resolveBankAccount,
+} from "@/src/lib/owners";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
   calculateInvoiceReceiptTotals,
@@ -42,8 +50,8 @@ type PaymentReceipt = {
   receipt_type: PaymentReceiptType;
   receipt_date: string;
   amount_paid: number;
-  bank_account?: Owner | null;
-  received_by_owner: Owner | null;
+  bank_account?: BankAccount | null;
+  received_by_owner: string | null;
   created_at: string;
 };
 
@@ -86,7 +94,7 @@ export default function PaymentReceiptsPage() {
   const [receivedByOverride, setReceivedByOverride] = useState<{
     invoiceId: string;
     receiptType: PaymentReceiptType;
-    value: Owner;
+    value: BankAccount;
   } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -226,13 +234,13 @@ export default function PaymentReceiptsPage() {
             })
           : 0;
 
-  const receivedByOwner =
+  const receivedBankAccount =
     receivedByOverride?.invoiceId === selectedInvoiceId &&
     receivedByOverride.receiptType === receiptType
       ? receivedByOverride.value
       : selectedReceipt
-        ? resolveOwner(selectedReceipt.received_by_owner || selectedReceipt.bank_account)
-        : DEFAULT_OWNER;
+        ? resolveBankAccount(selectedReceipt.bank_account)
+        : DEFAULT_BANK_ACCOUNT;
 
   function updateReceiptDate(value: string) {
     if (!selectedInvoiceId) return;
@@ -244,7 +252,7 @@ export default function PaymentReceiptsPage() {
     setAmountPaidOverride({ invoiceId: selectedInvoiceId, receiptType, value });
   }
 
-  function updateReceivedByOwner(value: Owner) {
+  function updateReceivedBankAccount(value: BankAccount) {
     if (!selectedInvoiceId) return;
     setReceivedByOverride({ invoiceId: selectedInvoiceId, receiptType, value });
   }
@@ -285,7 +293,7 @@ export default function PaymentReceiptsPage() {
     setReceivedByOverride({
       invoiceId: receipt.invoice_id,
       receiptType: receipt.receipt_type,
-      value: resolveOwner(receipt.received_by_owner || receipt.bank_account),
+      value: resolveBankAccount(receipt.bank_account),
     });
     setMessage(`Editing ${PAYMENT_RECEIPT_TYPE_LABELS[receipt.receipt_type]} receipt.`);
 
@@ -318,8 +326,8 @@ export default function PaymentReceiptsPage() {
       receipt_type: receiptType,
       receipt_date: receiptDate,
       amount_paid: normalizedAmount,
-      bank_account: receivedByOwner,
-      received_by_owner: receivedByOwner,
+      bank_account: receivedBankAccount,
+      received_by_owner: isOwner(receivedBankAccount) ? receivedBankAccount : DEFAULT_OWNER,
     };
 
     const receiptResult = selectedReceipt
@@ -367,13 +375,19 @@ export default function PaymentReceiptsPage() {
   });
 
   return (
-    <main style={{ padding: 24, fontFamily: "Arial, sans-serif", maxWidth: 1120 }}>
-      <div style={{ marginBottom: 20, display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <Link href="/">← Back to dashboard</Link>
-        <Link href="/invoices">Invoices</Link>
-      </div>
-
-      <h1>Payment Receipts</h1>
+    <AppPage
+      title="Payment Receipts"
+      description="Create receipts, record APS income by default, and keep owner direct payments available."
+      maxWidthClass="max-w-6xl"
+      actions={
+        <Link
+          href="/invoices"
+          className="inline-flex min-h-10 items-center rounded-md bg-white px-3 text-sm font-bold !text-slate-950 no-underline shadow-sm"
+        >
+          Invoices
+        </Link>
+      }
+    >
 
       {message ? (
         <p style={{ color: message.includes("saved") ? "#166534" : "#991b1b", fontWeight: 700 }}>
@@ -439,15 +453,15 @@ export default function PaymentReceiptsPage() {
           </div>
 
           <div>
-            <label>Received By</label>
+            <label>Received Into</label>
             <select
               style={{ width: "100%", padding: 10, marginTop: 4 }}
-              value={receivedByOwner}
-              onChange={(event) => updateReceivedByOwner(event.target.value as Owner)}
+              value={receivedBankAccount}
+              onChange={(event) => updateReceivedBankAccount(event.target.value as BankAccount)}
             >
-              {OWNERS.map((owner) => (
-                <option key={owner} value={owner}>
-                  {owner}
+              {BANK_ACCOUNTS.map((account) => (
+                <option key={account} value={account}>
+                  {account}
                 </option>
               ))}
             </select>
@@ -524,96 +538,98 @@ export default function PaymentReceiptsPage() {
         {receiptRows.length === 0 ? (
           <p>No payment receipts saved yet.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Date</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Type</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Invoice</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Client</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Received By</th>
-                <th style={{ textAlign: "right", borderBottom: "1px solid #ccc", padding: 8 }}>Paid</th>
-                <th style={{ textAlign: "right", borderBottom: "1px solid #ccc", padding: 8 }}>Still Owing</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {receiptRows.map(({ receipt, invoice, stillOwing }) => (
-                <tr key={receipt.id}>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {formatDisplayDate(receipt.receipt_date)}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {PAYMENT_RECEIPT_TYPE_LABELS[receipt.receipt_type]}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {invoice?.invoice_number || "Unknown invoice"}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {getClientName(invoice?.client_id || null)}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    {resolveOwner(receipt.received_by_owner || receipt.bank_account)}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
-                    {money(Number(receipt.amount_paid || 0))}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
-                    {money(stillOwing)}
-                  </td>
-                  <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button
-                        onClick={() => startEditingReceipt(receipt)}
-                        style={{
-                          padding: "8px 12px",
-                          borderRadius: 8,
-                          border: "1px solid #d1d5db",
-                          background: "#ffffff",
-                          color: "#111827",
-                          fontWeight: 700,
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <Link
-                        href={`/receipts/${receipt.id}`}
-                        style={{
-                          display: "inline-block",
-                          padding: "8px 12px",
-                          borderRadius: 8,
-                          background: "#111827",
-                          color: "#ffffff",
-                          textDecoration: "none",
-                          fontWeight: 700,
-                        }}
-                      >
-                        View
-                      </Link>
-                      <a
-                        href={`/api/receipts/${receipt.id}/pdf`}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          display: "inline-block",
-                          padding: "8px 12px",
-                          borderRadius: 8,
-                          border: "1px solid #d1d5db",
-                          color: "#111827",
-                          textDecoration: "none",
-                          fontWeight: 700,
-                        }}
-                      >
-                        PDF
-                      </a>
-                    </div>
-                  </td>
+          <div style={{ maxWidth: "100%", overflowX: "auto" }}>
+            <table style={{ width: "100%", minWidth: 860, borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Date</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Type</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Invoice</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Client</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Received Into</th>
+                  <th style={{ textAlign: "right", borderBottom: "1px solid #ccc", padding: 8 }}>Paid</th>
+                  <th style={{ textAlign: "right", borderBottom: "1px solid #ccc", padding: 8 }}>Still Owing</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {receiptRows.map(({ receipt, invoice, stillOwing }) => (
+                  <tr key={receipt.id}>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      {formatDisplayDate(receipt.receipt_date)}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      {PAYMENT_RECEIPT_TYPE_LABELS[receipt.receipt_type]}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      {invoice?.invoice_number || "Unknown invoice"}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      {getClientName(invoice?.client_id || null)}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      {resolveBankAccount(receipt.bank_account)}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                      {money(Number(receipt.amount_paid || 0))}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8, textAlign: "right" }}>
+                      {money(stillOwing)}
+                    </td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          onClick={() => startEditingReceipt(receipt)}
+                          style={{
+                            padding: "8px 12px",
+                            borderRadius: 8,
+                            border: "1px solid #d1d5db",
+                            background: "#ffffff",
+                            color: "#111827",
+                            fontWeight: 700,
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <Link
+                          href={`/receipts/${receipt.id}`}
+                          style={{
+                            display: "inline-block",
+                            padding: "8px 12px",
+                            borderRadius: 8,
+                            background: "#111827",
+                            color: "#ffffff",
+                            textDecoration: "none",
+                            fontWeight: 700,
+                          }}
+                        >
+                          View
+                        </Link>
+                        <a
+                          href={`/api/receipts/${receipt.id}/pdf`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: "inline-block",
+                            padding: "8px 12px",
+                            borderRadius: 8,
+                            border: "1px solid #d1d5db",
+                            color: "#111827",
+                            textDecoration: "none",
+                            fontWeight: 700,
+                          }}
+                        >
+                          PDF
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
-    </main>
+    </AppPage>
   );
 }
