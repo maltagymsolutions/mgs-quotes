@@ -78,6 +78,16 @@ type PaymentReceipt = {
   received_by_owner: Owner | null;
 };
 
+type AccountTransfer = {
+  id: string;
+  created_at: string;
+  transfer_date: string;
+  from_account: string;
+  to_account: string;
+  amount: number;
+  description: string | null;
+};
+
 type Client = {
   id: string;
   private_name: string | null;
@@ -102,10 +112,21 @@ type BreakdownRow = {
   amount: number;
 };
 
+type OwnerCashTotals = {
+  customerReceived: number;
+  supplierPaid: number;
+  splitReceived: number;
+  splitPaid: number;
+  transferReceived: number;
+  transferPaid: number;
+};
+
 const EXPENSES_SETUP_MESSAGE =
   "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql, 004_add_bank_accounts_to_money_records.sql, 005_adapt_money_records_to_owners.sql, and 006_add_vat_expense_category.sql in Supabase, then refresh this page.";
 const RECEIPTS_SETUP_MESSAGE =
   "Payment receipts table is not set up yet. Run supabase/migrations/003_create_payment_receipts.sql, 004_add_bank_accounts_to_money_records.sql, and 005_adapt_money_records_to_owners.sql in Supabase, then refresh this page.";
+const TRANSFERS_SETUP_MESSAGE =
+  "Account transfers are not set up yet. Run supabase/migrations/017_create_account_transfers.sql in Supabase, then refresh this page.";
 
 const cards = [
   {
@@ -197,6 +218,17 @@ function isDateInRange(date: string, dateFrom: string, dateTo: string) {
   return true;
 }
 
+function emptyOwnerCashTotals(): OwnerCashTotals {
+  return {
+    customerReceived: 0,
+    supplierPaid: 0,
+    splitReceived: 0,
+    splitPaid: 0,
+    transferReceived: 0,
+    transferPaid: 0,
+  };
+}
+
 export default function HomePage() {
   const supabase = useMemo(() => createClient(), []);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -204,6 +236,7 @@ export default function HomePage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [paymentReceipts, setPaymentReceipts] = useState<PaymentReceipt[]>([]);
+  const [accountTransfers, setAccountTransfers] = useState<AccountTransfer[]>([]);
   const [dashboardMessage, setDashboardMessage] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -214,7 +247,7 @@ export default function HomePage() {
     setIsLoadingDashboard(true);
 
     try {
-      const [clientsResult, invoicesResult, invoiceItemsResult, expensesResult, receiptsResult] = await Promise.all([
+      const [clientsResult, invoicesResult, invoiceItemsResult, expensesResult, receiptsResult, transfersResult] = await Promise.all([
         supabase.from("clients").select("id, private_name, company_name"),
         supabase
           .from("invoices")
@@ -229,6 +262,11 @@ export default function HomePage() {
           .from("payment_receipts")
           .select("id, created_at, invoice_id, receipt_type, receipt_date, amount_paid, bank_account, received_by_owner")
           .order("receipt_date", { ascending: false }),
+        supabase
+          .from("account_transfers")
+          .select("*")
+          .order("transfer_date", { ascending: false })
+          .order("created_at", { ascending: false }),
       ]);
 
       if (clientsResult.error) {
@@ -265,7 +303,13 @@ export default function HomePage() {
       }
 
       setPaymentReceipts(receiptsResult.data || []);
-      setDashboardMessage("");
+      if (transfersResult.error) {
+        setAccountTransfers([]);
+        setDashboardMessage(TRANSFERS_SETUP_MESSAGE);
+      } else {
+        setAccountTransfers((transfersResult.data || []) as AccountTransfer[]);
+        setDashboardMessage("");
+      }
       setLastUpdated(new Date().toLocaleString("en-MT", {
         day: "2-digit",
         month: "short",
@@ -306,23 +350,10 @@ export default function HomePage() {
 
     const statusTotals = new Map<string, number>();
     const monthlyIncomeTotals = new Map<string, number>();
-    const ownerTotals = new Map<
-      Owner,
-      {
-        customerReceived: number;
-        supplierPaid: number;
-        splitReceived: number;
-        splitPaid: number;
-      }
-    >();
+    const ownerTotals = new Map<Owner, OwnerCashTotals>();
 
     OWNERS.forEach((owner) => {
-      ownerTotals.set(owner, {
-        customerReceived: 0,
-        supplierPaid: 0,
-        splitReceived: 0,
-        splitPaid: 0,
-      });
+      ownerTotals.set(owner, emptyOwnerCashTotals());
     });
 
     let totalIncome = 0;
@@ -404,12 +435,7 @@ export default function HomePage() {
       const client = invoice?.client_id ? clientById.get(invoice.client_id) : null;
       const clientName = client?.company_name || client?.private_name || "Customer";
       const totals =
-        ownerTotals.get(owner) || {
-          customerReceived: 0,
-          supplierPaid: 0,
-          splitReceived: 0,
-          splitPaid: 0,
-        };
+        ownerTotals.get(owner) || emptyOwnerCashTotals();
 
       totals.customerReceived = round2(
         totals.customerReceived + Number(receipt.amount_paid || 0)
@@ -472,12 +498,7 @@ export default function HomePage() {
       const paidBy = resolveOwner(expense.paid_by_owner || bankAccount);
       const splitBetween = Array.from(new Set([paidBy, ...resolveOwnerSplit(expense.split_owners, paidBy)]));
       const paidTotals =
-        ownerTotals.get(paidBy) || {
-          customerReceived: 0,
-          supplierPaid: 0,
-          splitReceived: 0,
-          splitPaid: 0,
-        };
+        ownerTotals.get(paidBy) || emptyOwnerCashTotals();
       const ownerShare = round2(amount / splitBetween.length);
 
       paidTotals.supplierPaid = round2(paidTotals.supplierPaid + amount);
@@ -498,12 +519,7 @@ export default function HomePage() {
         if (owner === paidBy) return;
 
         const totals =
-          ownerTotals.get(owner) || {
-            customerReceived: 0,
-            supplierPaid: 0,
-            splitReceived: 0,
-            splitPaid: 0,
-          };
+          ownerTotals.get(owner) || emptyOwnerCashTotals();
         const currentPaidTotals = ownerTotals.get(paidBy) || paidTotals;
 
         totals.splitPaid = round2(totals.splitPaid + ownerShare);
@@ -568,6 +584,50 @@ export default function HomePage() {
       }
     });
 
+    accountTransfers
+      .filter((transfer) => isDateInRange(transfer.transfer_date, dateFrom, dateTo))
+      .forEach((transfer) => {
+        const fromAccount = resolveBankAccount(transfer.from_account);
+        const toAccount = resolveBankAccount(transfer.to_account);
+        const amount = Number(transfer.amount || 0);
+
+        if (fromAccount === "APS" && isOwner(toAccount)) {
+          const totals = ownerTotals.get(toAccount) || emptyOwnerCashTotals();
+
+          totals.transferReceived = round2(totals.transferReceived + amount);
+          ownerTotals.set(toAccount, totals);
+          ownerTransactionRows.push({
+            date: transfer.transfer_date,
+            createdAt: transfer.created_at,
+            owner: toAccount,
+            type: "APS transfer received",
+            counterparty: "APS",
+            reference: transfer.id,
+            description: transfer.description || "Transfer from APS",
+            category: "Transfer",
+            amount,
+          });
+        }
+
+        if (toAccount === "APS" && isOwner(fromAccount)) {
+          const totals = ownerTotals.get(fromAccount) || emptyOwnerCashTotals();
+
+          totals.transferPaid = round2(totals.transferPaid + amount);
+          ownerTotals.set(fromAccount, totals);
+          ownerTransactionRows.push({
+            date: transfer.transfer_date,
+            createdAt: transfer.created_at,
+            owner: fromAccount,
+            type: "APS transfer paid",
+            counterparty: "APS",
+            reference: transfer.id,
+            description: transfer.description || "Transfer to APS",
+            category: "Transfer",
+            amount: -amount,
+          });
+        }
+      });
+
     const months = Array.from(new Set([...monthlyIncomeTotals.keys(), ...monthlyExpenseTotals.keys()]))
       .sort()
       .reverse()
@@ -601,15 +661,9 @@ export default function HomePage() {
       vatBalance: round2(incomeVat - expenseVat - vatPayments),
       ownerTransactions,
       ownerBalances: OWNERS.map((owner) => {
-        const totals =
-          ownerTotals.get(owner) || {
-            customerReceived: 0,
-            supplierPaid: 0,
-            splitReceived: 0,
-            splitPaid: 0,
-          };
-        const totalReceived = round2(totals.customerReceived + totals.splitReceived);
-        const totalPaid = round2(totals.supplierPaid + totals.splitPaid);
+        const totals = ownerTotals.get(owner) || emptyOwnerCashTotals();
+        const totalReceived = round2(totals.customerReceived + totals.splitReceived + totals.transferReceived);
+        const totalPaid = round2(totals.supplierPaid + totals.splitPaid + totals.transferPaid);
 
         return {
           owner,
@@ -617,6 +671,8 @@ export default function HomePage() {
           supplierPaid: totals.supplierPaid,
           splitReceived: totals.splitReceived,
           splitPaid: totals.splitPaid,
+          transferReceived: totals.transferReceived,
+          transferPaid: totals.transferPaid,
           totalReceived,
           totalPaid,
           balance: round2(totalReceived - totalPaid),
@@ -634,7 +690,7 @@ export default function HomePage() {
         expenses: monthlyExpenseTotals.get(month) || 0,
       })),
     };
-  }, [clients, dateFrom, dateTo, expenses, invoiceItems, invoices, paymentReceipts]);
+  }, [accountTransfers, clients, dateFrom, dateTo, expenses, invoiceItems, invoices, paymentReceipts]);
 
   function showAllDates() {
     setDateFrom("");
@@ -881,10 +937,19 @@ export default function HomePage() {
             </div>
 
             <div className="max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white">
-              <table className="w-full min-w-[820px] border-collapse">
+              <table className="w-full min-w-[1040px] border-collapse">
                 <thead>
                   <tr>
-                    {["Owner", "Balance", "Customer received", "Supplier paid", "Split received", "Split paid"].map(
+                    {[
+                      "Owner",
+                      "Balance",
+                      "Customer received",
+                      "Supplier paid",
+                      "Split received",
+                      "Split paid",
+                      "APS received",
+                      "APS paid",
+                    ].map(
                       (heading) => (
                         <th
                           key={heading}
@@ -921,6 +986,12 @@ export default function HomePage() {
                       </td>
                       <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
                         {money(row.splitPaid)}
+                      </td>
+                      <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
+                        {money(row.transferReceived)}
+                      </td>
+                      <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
+                        {money(row.transferPaid)}
                       </td>
                     </tr>
                   ))}

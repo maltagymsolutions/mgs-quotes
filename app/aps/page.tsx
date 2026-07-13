@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/src/components/app-page";
 import { buildCsv, downloadCsv } from "@/src/lib/csv";
 import { formatDisplayDate } from "@/src/lib/format-date";
-import { resolveBankAccount } from "@/src/lib/owners";
+import { DEFAULT_OWNER, Owner, OWNERS, resolveBankAccount } from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Client = {
@@ -41,11 +41,21 @@ type Expense = {
   bank_account: string | null;
 };
 
+type AccountTransfer = {
+  id: string;
+  created_at: string;
+  transfer_date: string;
+  from_account: string;
+  to_account: string;
+  amount: number;
+  description: string;
+};
+
 type ApsTransaction = {
   id: string;
   date: string;
   createdAt: string;
-  type: "Income" | "Expense";
+  type: "Income" | "Expense" | "Transfer";
   counterparty: string;
   reference: string;
   description: string;
@@ -78,6 +88,13 @@ function isDateInRange(date: string, dateFrom: string, dateTo: string) {
   return true;
 }
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+const TRANSFERS_SETUP_MESSAGE =
+  "Account transfers are not set up yet. Run supabase/migrations/017_create_account_transfers.sql in Supabase, then refresh this page.";
+
 export default function ApsPage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -86,6 +103,12 @@ export default function ApsPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [transfers, setTransfers] = useState<AccountTransfer[]>([]);
+  const [transferDate, setTransferDate] = useState(todayIsoDate());
+  const [transferDirection, setTransferDirection] = useState<"aps-to-owner" | "owner-to-aps">("aps-to-owner");
+  const [transferOwner, setTransferOwner] = useState<Owner>(DEFAULT_OWNER);
+  const [transferAmount, setTransferAmount] = useState("");
+  const [transferDescription, setTransferDescription] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
@@ -93,7 +116,7 @@ export default function ApsPage() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const loadData = useCallback(async function loadData() {
-    const [clientsResult, invoicesResult, receiptsResult, expensesResult] = await Promise.all([
+    const [clientsResult, invoicesResult, receiptsResult, expensesResult, transfersResult] = await Promise.all([
       supabase.from("clients").select("id, private_name, company_name"),
       supabase.from("invoices").select("id, invoice_number, client_id"),
       supabase
@@ -104,6 +127,11 @@ export default function ApsPage() {
         .from("expenses")
         .select("id, created_at, expense_date, supplier, description, category, amount_incl_vat, bank_account")
         .order("expense_date", { ascending: false }),
+      supabase
+        .from("account_transfers")
+        .select("*")
+        .order("transfer_date", { ascending: false })
+        .order("created_at", { ascending: false }),
     ]);
 
     const error = clientsResult.error || invoicesResult.error || receiptsResult.error || expensesResult.error;
@@ -117,7 +145,8 @@ export default function ApsPage() {
     setInvoices((invoicesResult.data || []) as Invoice[]);
     setReceipts((receiptsResult.data || []) as PaymentReceipt[]);
     setExpenses((expensesResult.data || []) as Expense[]);
-    setMessage("");
+    setTransfers((transfersResult.data || []) as AccountTransfer[]);
+    setMessage(transfersResult.error ? TRANSFERS_SETUP_MESSAGE : "");
   }, [supabase]);
 
   useEffect(() => {
@@ -169,6 +198,26 @@ export default function ApsPage() {
         });
       });
 
+    transfers.forEach((transfer) => {
+      const fromAccount = resolveBankAccount(transfer.from_account);
+      const toAccount = resolveBankAccount(transfer.to_account);
+      const amount = Number(transfer.amount || 0);
+
+      if (fromAccount !== "APS" && toAccount !== "APS") return;
+
+      rows.push({
+        id: `transfer-${transfer.id}`,
+        date: transfer.transfer_date,
+        createdAt: transfer.created_at,
+        type: "Transfer",
+        counterparty: fromAccount === "APS" ? toAccount : fromAccount,
+        reference: transfer.id,
+        description: transfer.description || (fromAccount === "APS" ? "Transfer to owner" : "Transfer from owner"),
+        category: fromAccount === "APS" ? "Transfer out" : "Transfer in",
+        amount: fromAccount === "APS" ? -amount : amount,
+      });
+    });
+
     return rows
       .sort(
         (a, b) =>
@@ -188,7 +237,7 @@ export default function ApsPage() {
 
         return transactions;
       }, []);
-  }, [clientById, expenses, invoiceById, receipts]);
+  }, [clientById, expenses, invoiceById, receipts, transfers]);
 
   const filteredTransactions = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -271,6 +320,39 @@ export default function ApsPage() {
     setMessage(`Exported ${filteredTransactions.length} APS transaction(s).`);
   }
 
+  async function saveTransfer() {
+    const amount = Number(transferAmount || 0);
+
+    if (amount <= 0) {
+      setMessage("Transfer amount must be greater than zero.");
+      return;
+    }
+
+    const payload = {
+      transfer_date: transferDate,
+      from_account: transferDirection === "aps-to-owner" ? "APS" : transferOwner,
+      to_account: transferDirection === "aps-to-owner" ? transferOwner : "APS",
+      amount,
+      description:
+        transferDescription.trim() ||
+        (transferDirection === "aps-to-owner" ? "Transfer to owner" : "Transfer from owner"),
+    };
+
+    setMessage("Saving transfer...");
+
+    const { error } = await supabase.from("account_transfers").insert(payload);
+
+    if (error) {
+      setMessage(error.code === "PGRST205" || error.code === "42P01" ? TRANSFERS_SETUP_MESSAGE : error.message);
+      return;
+    }
+
+    setTransferAmount("");
+    setTransferDescription("");
+    await loadData();
+    setMessage("Transfer saved.");
+  }
+
   return (
     <AppPage
       title="APS Account"
@@ -292,6 +374,85 @@ export default function ApsPage() {
         <SummaryCard label="Total APS expenses" value={money(summary.expenses)} />
         <SummaryCard label="Filtered net" value={money(summary.filteredNet)} />
       </div>
+
+      <section className="mb-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-4">
+          <h2 className="m-0 text-lg font-bold text-slate-950">Transfer Money</h2>
+          <p className="mt-1 text-sm text-slate-500">Record money moving between APS and an owner account.</p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div>
+            <label htmlFor="transfer-date">Date</label>
+            <input
+              id="transfer-date"
+              type="date"
+              className="mt-1 w-full px-3 py-2"
+              value={transferDate}
+              onChange={(event) => setTransferDate(event.target.value)}
+            />
+          </div>
+          <div>
+            <label htmlFor="transfer-direction">Direction</label>
+            <select
+              id="transfer-direction"
+              className="mt-1 w-full px-3 py-2"
+              value={transferDirection}
+              onChange={(event) =>
+                setTransferDirection(event.target.value as "aps-to-owner" | "owner-to-aps")
+              }
+            >
+              <option value="aps-to-owner">APS to owner</option>
+              <option value="owner-to-aps">Owner to APS</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="transfer-owner">Owner</label>
+            <select
+              id="transfer-owner"
+              className="mt-1 w-full px-3 py-2"
+              value={transferOwner}
+              onChange={(event) => setTransferOwner(event.target.value as Owner)}
+            >
+              {OWNERS.map((owner) => (
+                <option key={owner} value={owner}>
+                  {owner}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="transfer-amount">Amount</label>
+            <input
+              id="transfer-amount"
+              type="number"
+              min="0"
+              step="0.01"
+              className="mt-1 w-full px-3 py-2"
+              value={transferAmount}
+              onChange={(event) => setTransferAmount(event.target.value)}
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={saveTransfer}
+              className="inline-flex h-10 w-full items-center justify-center !rounded-md !border-slate-900 !bg-slate-900 px-3 text-sm font-bold !text-white"
+            >
+              Save Transfer
+            </button>
+          </div>
+          <div className="sm:col-span-2 lg:col-span-5">
+            <label htmlFor="transfer-description">Description</label>
+            <input
+              id="transfer-description"
+              className="mt-1 w-full px-3 py-2"
+              placeholder="Optional note"
+              value={transferDescription}
+              onChange={(event) => setTransferDescription(event.target.value)}
+            />
+          </div>
+        </div>
+      </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -343,6 +504,7 @@ export default function ApsPage() {
               <option value="All">All types</option>
               <option value="Income">Income</option>
               <option value="Expense">Expense</option>
+              <option value="Transfer">Transfer</option>
             </select>
           </div>
           <div>
