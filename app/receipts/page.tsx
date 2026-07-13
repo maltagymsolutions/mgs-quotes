@@ -11,6 +11,7 @@ import {
   isOwner,
   resolveBankAccount,
 } from "@/src/lib/owners";
+import { formatDatabaseError } from "@/src/lib/database-errors";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
   calculateInvoiceReceiptTotals,
@@ -113,17 +114,17 @@ export default function PaymentReceiptsPage() {
     ]);
 
     if (clientsResult.error) {
-      setMessage(clientsResult.error.message);
+      setMessage(formatDatabaseError(clientsResult.error));
       return;
     }
 
     if (invoicesResult.error) {
-      setMessage(invoicesResult.error.message);
+      setMessage(formatDatabaseError(invoicesResult.error));
       return;
     }
 
     if (itemsResult.error) {
-      setMessage(itemsResult.error.message);
+      setMessage(formatDatabaseError(itemsResult.error));
       return;
     }
 
@@ -133,7 +134,7 @@ export default function PaymentReceiptsPage() {
 
     if (receiptsResult.error) {
       setReceipts([]);
-      setMessage(RECEIPTS_SETUP_MESSAGE);
+      setMessage(formatDatabaseError(receiptsResult.error, RECEIPTS_SETUP_MESSAGE));
       return;
     }
 
@@ -336,7 +337,7 @@ export default function PaymentReceiptsPage() {
 
     if (receiptResult.error) {
       setSaving(false);
-      setMessage(receiptResult.error.message);
+      setMessage(formatDatabaseError(receiptResult.error, RECEIPTS_SETUP_MESSAGE));
       return;
     }
 
@@ -347,7 +348,7 @@ export default function PaymentReceiptsPage() {
       .eq("id", selectedInvoice.id);
 
     if (statusError) {
-      setMessage(statusError.message);
+      setMessage(formatDatabaseError(statusError));
       setSaving(false);
       return;
     }

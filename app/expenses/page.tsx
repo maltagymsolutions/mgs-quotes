@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/src/components/app-page";
 import { buildCsv, downloadCsv } from "@/src/lib/csv";
+import { formatDatabaseError } from "@/src/lib/database-errors";
 import {
   BankAccount,
   BANK_ACCOUNTS,
@@ -112,7 +113,7 @@ export default function ExpensesPage() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      setMessage(error.code === "PGRST205" ? EXPENSES_SETUP_MESSAGE : error.message);
+      setMessage(formatDatabaseError(error, EXPENSES_SETUP_MESSAGE));
       return;
     }
 
@@ -149,7 +150,7 @@ export default function ExpensesPage() {
   async function signOut() {
     const { error } = await supabase.auth.signOut();
     if (error) {
-      setMessage(error.code === "PGRST205" ? EXPENSES_SETUP_MESSAGE : error.message);
+      setMessage(formatDatabaseError(error, EXPENSES_SETUP_MESSAGE));
       return;
     }
 
@@ -252,7 +253,7 @@ export default function ExpensesPage() {
       : await supabase.from("expenses").insert(payload);
 
     if (error) {
-      setMessage(error.code === "PGRST205" ? EXPENSES_SETUP_MESSAGE : error.message);
+      setMessage(formatDatabaseError(error, EXPENSES_SETUP_MESSAGE));
       return;
     }
 
@@ -270,7 +271,7 @@ export default function ExpensesPage() {
     const { error } = await supabase.from("expenses").delete().eq("id", expenseId);
 
     if (error) {
-      setMessage(error.message);
+      setMessage(formatDatabaseError(error));
       return;
     }
 
