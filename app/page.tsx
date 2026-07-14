@@ -65,6 +65,7 @@ type Expense = {
   bank_account?: BankAccount | null;
   paid_by_owner: Owner | null;
   split_owners: Owner[] | null;
+  hidden_from_dashboard?: boolean | null;
 };
 
 type PaymentReceipt = {
@@ -122,7 +123,7 @@ type OwnerCashTotals = {
 };
 
 const EXPENSES_SETUP_MESSAGE =
-  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql, 004_add_bank_accounts_to_money_records.sql, 005_adapt_money_records_to_owners.sql, and 006_add_vat_expense_category.sql in Supabase, then refresh this page.";
+  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql, 004_add_bank_accounts_to_money_records.sql, 005_adapt_money_records_to_owners.sql, 006_add_vat_expense_category.sql, and 018_add_hidden_expenses_from_dashboard.sql in Supabase, then refresh this page.";
 const RECEIPTS_SETUP_MESSAGE =
   "Payment receipts table is not set up yet. Run supabase/migrations/003_create_payment_receipts.sql, 004_add_bank_accounts_to_money_records.sql, and 005_adapt_money_records_to_owners.sql in Supabase, then refresh this page.";
 const TRANSFERS_SETUP_MESSAGE =
@@ -256,7 +257,7 @@ export default function HomePage() {
         supabase.from("invoice_items").select("*"),
         supabase
           .from("expenses")
-          .select("id, created_at, expense_date, supplier, description, category, vat_rate, amount_incl_vat, bank_account, paid_by_owner, split_owners")
+          .select("id, created_at, expense_date, supplier, description, category, vat_rate, amount_incl_vat, bank_account, paid_by_owner, split_owners, hidden_from_dashboard")
           .order("expense_date", { ascending: false }),
         supabase
           .from("payment_receipts")
@@ -456,6 +457,7 @@ export default function HomePage() {
 
     expenses
       .filter((expense) => isDateInRange(expense.expense_date, dateFrom, dateTo))
+      .filter((expense) => !expense.hidden_from_dashboard)
       .forEach((expense) => {
       const amount = Number(expense.amount_incl_vat || 0);
       const isVatPayment = expense.category === "VAT";

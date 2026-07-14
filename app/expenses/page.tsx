@@ -34,6 +34,7 @@ type Expense = {
   bank_account?: BankAccount | null;
   paid_by_owner: Owner | null;
   split_owners: Owner[] | null;
+  hidden_from_dashboard?: boolean | null;
 };
 
 type ExpenseCategory = "Equipment" | "Professional fees" | "Tax" | "Shipping" | "VAT" | "Advertising";
@@ -50,7 +51,7 @@ const EXPENSE_CATEGORIES: ExpenseCategory[] = [
 const VAT_RATES = [0, 5, 7, 18] as const;
 
 const EXPENSES_SETUP_MESSAGE =
-  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql, 004_add_bank_accounts_to_money_records.sql, 005_adapt_money_records_to_owners.sql, and 006_add_vat_expense_category.sql in Supabase, then refresh this page.";
+  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql, 004_add_bank_accounts_to_money_records.sql, 005_adapt_money_records_to_owners.sql, 006_add_vat_expense_category.sql, and 018_add_hidden_expenses_from_dashboard.sql in Supabase, then refresh this page.";
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -97,10 +98,12 @@ export default function ExpensesPage() {
   const [bankAccount, setBankAccount] = useState<BankAccount>(DEFAULT_BANK_ACCOUNT);
   const [paidByOwner, setPaidByOwner] = useState<Owner>(DEFAULT_OWNER);
   const [splitOwners, setSplitOwners] = useState<Owner[]>([DEFAULT_OWNER]);
+  const [hiddenFromDashboard, setHiddenFromDashboard] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [supplierFilter, setSupplierFilter] = useState("All");
   const [bankAccountFilter, setBankAccountFilter] = useState("All");
   const [ownerFilter, setOwnerFilter] = useState("All");
+  const [dashboardFilter, setDashboardFilter] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -169,6 +172,7 @@ export default function ExpensesPage() {
     setBankAccount(DEFAULT_BANK_ACCOUNT);
     setPaidByOwner(DEFAULT_OWNER);
     setSplitOwners([DEFAULT_OWNER]);
+    setHiddenFromDashboard(false);
   }
 
   function startEditing(expense: Expense) {
@@ -185,6 +189,7 @@ export default function ExpensesPage() {
     setBankAccount(account);
     setPaidByOwner(owner);
     setSplitOwners(resolveOwnerSplit(expense.split_owners, owner));
+    setHiddenFromDashboard(Boolean(expense.hidden_from_dashboard));
   }
 
   function updateBankAccount(account: BankAccount) {
@@ -246,6 +251,7 @@ export default function ExpensesPage() {
       bank_account: bankAccount,
       paid_by_owner: normalizedPaidByOwner,
       split_owners: normalizedSplitOwners,
+      hidden_from_dashboard: hiddenFromDashboard,
     };
 
     const { error } = editingExpenseId
@@ -259,6 +265,25 @@ export default function ExpensesPage() {
 
     clearForm();
     setMessage(editingExpenseId ? "Expense updated." : "Expense saved.");
+    await loadExpenses();
+  }
+
+  async function toggleDashboardVisibility(expense: Expense) {
+    const nextHidden = !expense.hidden_from_dashboard;
+
+    setMessage(nextHidden ? "Hiding expense from dashboard calculations..." : "Including expense in dashboard calculations...");
+
+    const { error } = await supabase
+      .from("expenses")
+      .update({ hidden_from_dashboard: nextHidden })
+      .eq("id", expense.id);
+
+    if (error) {
+      setMessage(formatDatabaseError(error, EXPENSES_SETUP_MESSAGE));
+      return;
+    }
+
+    setMessage(nextHidden ? "Expense hidden from dashboard calculations." : "Expense included in dashboard calculations.");
     await loadExpenses();
   }
 
@@ -323,6 +348,14 @@ export default function ExpensesPage() {
       });
     }
 
+    if (dashboardFilter === "Included") {
+      rows = rows.filter((expense) => !expense.hidden_from_dashboard);
+    }
+
+    if (dashboardFilter === "Hidden") {
+      rows = rows.filter((expense) => Boolean(expense.hidden_from_dashboard));
+    }
+
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       rows = rows.filter(
@@ -340,7 +373,7 @@ export default function ExpensesPage() {
     }
 
     return rows;
-  }, [expenses, bankAccountFilter, categoryFilter, dateFrom, dateTo, ownerFilter, searchTerm, supplierFilter]);
+  }, [expenses, bankAccountFilter, categoryFilter, dashboardFilter, dateFrom, dateTo, ownerFilter, searchTerm, supplierFilter]);
 
   const summary = useMemo(() => {
     return filteredExpenses.reduce(
@@ -399,6 +432,7 @@ export default function ExpensesPage() {
       "Amount Excl. VAT",
       "VAT Amount",
       "Amount Incl. VAT",
+      "Dashboard Calculations",
       "Created At",
     ];
 
@@ -423,6 +457,7 @@ export default function ExpensesPage() {
         "Amount Excl. VAT": calculated.amountExclVat.toFixed(2),
         "VAT Amount": calculated.vatAmount.toFixed(2),
         "Amount Incl. VAT": Number(expense.amount_incl_vat || 0).toFixed(2),
+        "Dashboard Calculations": expense.hidden_from_dashboard ? "Hidden" : "Included",
         "Created At": expense.created_at,
       };
     });
@@ -621,6 +656,31 @@ export default function ExpensesPage() {
               APS expenses are treated as company-paid and are not added to owner cash balances.
             </div>
           )}
+
+          <label
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "flex-start",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              background: hiddenFromDashboard ? "#fff7ed" : "#f9fafb",
+              padding: 12,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={hiddenFromDashboard}
+              onChange={(e) => setHiddenFromDashboard(e.target.checked)}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              <strong style={{ display: "block", color: "#111827" }}>Hide from dashboard calculations</strong>
+              <span style={{ display: "block", marginTop: 3, color: "#6b7280", fontSize: 13 }}>
+                The expense stays in this list, but dashboard expense totals, VAT, owner balances, and category/monthly breakdowns omit it.
+              </span>
+            </span>
+          </label>
 
           <div
             style={{
@@ -830,6 +890,19 @@ export default function ExpensesPage() {
               ))}
             </select>
           </div>
+
+          <div>
+            <label>Dashboard</label>
+            <select
+              style={{ width: "100%", padding: 12, marginTop: 6 }}
+              value={dashboardFilter}
+              onChange={(e) => setDashboardFilter(e.target.value)}
+            >
+              <option value="All">All statuses</option>
+              <option value="Included">Included in dashboard</option>
+              <option value="Hidden">Hidden from dashboard</option>
+            </select>
+          </div>
         </div>
 
         {filteredCategoryTotals.length > 0 ? (
@@ -885,6 +958,7 @@ export default function ExpensesPage() {
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Excl. VAT</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>VAT</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Incl. VAT</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Dashboard</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Edit</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Delete</th>
                 </tr>
@@ -925,6 +999,19 @@ export default function ExpensesPage() {
                       </td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, textAlign: "right", fontWeight: 700 }}>
                         {money(expense.amount_incl_vat)}
+                      </td>
+                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                        <button
+                          onClick={() => toggleDashboardVisibility(expense)}
+                          style={{
+                            padding: "8px 12px",
+                            background: expense.hidden_from_dashboard ? "#fff7ed" : "#ecfdf5",
+                            color: expense.hidden_from_dashboard ? "#9a3412" : "#065f46",
+                            border: expense.hidden_from_dashboard ? "1px solid #fdba74" : "1px solid #a7f3d0",
+                          }}
+                        >
+                          {expense.hidden_from_dashboard ? "Hidden" : "Included"}
+                        </button>
                       </td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                         <button
