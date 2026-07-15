@@ -345,13 +345,10 @@ export default function InvoicesPage() {
       )
     );
   
-    const shippingVatAmount = round2(
-      Number(shippingCostInclVat || 0) -
-        Number(shippingCostInclVat || 0) / (1 + vatRate / 100)
-    );
+    const shippingExpense = round2(Number(shippingCostInclVat || 0));
   
     const profit = round2(
-      grossTotal - salesVatAmount - Number(shippingCostInclVat || 0) + shippingVatAmount - totalCost
+      grossTotal - salesVatAmount - shippingExpense - totalCost
     );
   
     const depositAmount = round2(grossTotal * (depositPercent / 100));
@@ -365,7 +362,6 @@ export default function InvoicesPage() {
       discountApplied,
       grossTotal,
       totalCost,
-      shippingVatAmount,
       profit,
       depositAmount,
     };
@@ -670,7 +666,7 @@ export default function InvoicesPage() {
           </div>
 
           <div>
-            <label>Shipping Cost incl. VAT</label>
+            <label>Shipping expense</label>
             <input
               style={{ width: "100%", padding: 10, marginTop: 4 }}
               type="number"
@@ -989,13 +985,8 @@ export default function InvoicesPage() {
             {Number(shippingCostInclVat || 0) > 0 ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span style={{ color: "#6b7280" }}>Shipping incl. VAT</span>
+                  <span style={{ color: "#6b7280" }}>Shipping expense</span>
                   <strong>{Number(shippingCostInclVat || 0).toFixed(2)}</strong>
-                </div>
-        
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span style={{ color: "#6b7280" }}>VAT on shipping</span>
-                  <strong>{totals.shippingVatAmount.toFixed(2)}</strong>
                 </div>
               </>
             ) : null}
