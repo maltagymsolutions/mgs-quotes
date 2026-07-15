@@ -952,7 +952,6 @@ export default function ExpensesPage() {
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Description</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Category</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Paid From</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Direct Owner</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Split Between</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>VAT %</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Excl. VAT</th>
@@ -981,9 +980,6 @@ export default function ExpensesPage() {
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.category}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                         {account}
-                      </td>
-                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
-                        {isOwner(account) ? paidBy : "-"}
                       </td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                         {isOwner(account) ? splitBetween.join(", ") : "-"}
