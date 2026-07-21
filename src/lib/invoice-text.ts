@@ -1,16 +1,23 @@
 import { isPartialDeposit } from "@/src/lib/deposits";
 
 export const DEFAULT_INVOICE_BANK_DETAILS = [
-  "Account Name: ROBERT MALLIA & LUKE GALEA & KARL JOSEPH CAMILLERI T/A MALTA GYM SOLUTIONS",
+  "Account Name: MALTA GYM SOLUTIONS",
   "IBAN: MT32APSB77013000000050409410015",
   "BIC/SWIFT: APSBMTMTXXX",
   "Bank details: APS BANK LTD, APS CENTRE TOWER STREET, BIRKIRKARA",
 ].join("\n");
 
-const LEGACY_INVOICE_BANK_DETAILS = [
+const LEGACY_REVOLUT_INVOICE_BANK_DETAILS = [
   "Beneficiary: Luke Galea",
   "IBAN: LT59 3250 0534 4337 4796",
   "SWIFT/BIC: REVOLT21",
+].join("\n");
+
+const LEGACY_APS_INVOICE_BANK_DETAILS = [
+  "Account Name: ROBERT MALLIA & LUKE GALEA & KARL JOSEPH CAMILLERI T/A MALTA GYM SOLUTIONS",
+  "IBAN: MT32APSB77013000000050409410015",
+  "BIC/SWIFT: APSBMTMTXXX",
+  "Bank details: APS BANK LTD, APS CENTRE TOWER STREET, BIRKIRKARA",
 ].join("\n");
 
 export const DEFAULT_INVOICE_NOTES =
@@ -67,7 +74,11 @@ export function resolveCustomText(
 export function resolveInvoiceBankDetails(customText: string | null | undefined) {
   const normalizedText = customText?.trim();
 
-  if (!normalizedText || normalizedText === LEGACY_INVOICE_BANK_DETAILS) {
+  if (
+    !normalizedText ||
+    normalizedText === LEGACY_REVOLUT_INVOICE_BANK_DETAILS ||
+    normalizedText === LEGACY_APS_INVOICE_BANK_DETAILS
+  ) {
     return DEFAULT_INVOICE_BANK_DETAILS;
   }
 
