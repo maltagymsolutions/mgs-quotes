@@ -190,6 +190,8 @@ export default function ExpensesPage() {
     setPaidByOwner(owner);
     setSplitOwners(resolveOwnerSplit(expense.split_owners, owner));
     setHiddenFromDashboard(Boolean(expense.hidden_from_dashboard));
+    setMessage(`Editing expense: ${expense.description}`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function updateBankAccount(account: BankAccount) {
@@ -958,8 +960,19 @@ export default function ExpensesPage() {
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>VAT</th>
                   <th style={{ textAlign: "right", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Incl. VAT</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Dashboard</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Edit</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Delete</th>
+                  <th
+                    style={{
+                      textAlign: "left",
+                      borderBottom: "1px solid #e5e7eb",
+                      padding: 12,
+                      position: "sticky",
+                      right: 0,
+                      background: "#ffffff",
+                      boxShadow: "-8px 0 12px rgba(15, 23, 42, 0.06)",
+                    }}
+                  >
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1009,31 +1022,40 @@ export default function ExpensesPage() {
                           {expense.hidden_from_dashboard ? "Hidden" : "Included"}
                         </button>
                       </td>
-                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
-                        <button
-                          onClick={() => startEditing(expense)}
-                          style={{
-                            padding: "8px 12px",
-                            background: "#ffffff",
-                            color: "#111827",
-                            border: "1px solid #d1d5db",
-                          }}
-                        >
-                          Edit
-                        </button>
-                      </td>
-                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
-                        <button
-                          onClick={() => deleteExpense(expense.id)}
-                          style={{
-                            padding: "8px 12px",
-                            background: "#ffffff",
-                            color: "#991b1b",
-                            border: "1px solid #fca5a5",
-                          }}
-                        >
-                          Delete
-                        </button>
+                      <td
+                        style={{
+                          borderBottom: "1px solid #f1f5f9",
+                          padding: 12,
+                          position: "sticky",
+                          right: 0,
+                          background: "#ffffff",
+                          boxShadow: "-8px 0 12px rgba(15, 23, 42, 0.06)",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            onClick={() => startEditing(expense)}
+                            style={{
+                              padding: "8px 12px",
+                              background: "#ffffff",
+                              color: "#111827",
+                              border: "1px solid #d1d5db",
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteExpense(expense.id)}
+                            style={{
+                              padding: "8px 12px",
+                              background: "#ffffff",
+                              color: "#991b1b",
+                              border: "1px solid #fca5a5",
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
