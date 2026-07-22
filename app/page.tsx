@@ -11,6 +11,7 @@ import {
   CreditCard,
   Download,
   FileText,
+  FileSpreadsheet,
   Filter,
   Landmark,
   Package,
@@ -171,6 +172,12 @@ const cards = [
     href: "/expenses",
     description: "Capture supplier and VAT costs",
     icon: TrendingDown,
+  },
+  {
+    title: "Reports",
+    href: "/reports",
+    description: "Export income and expense reports",
+    icon: FileSpreadsheet,
   },
   {
     title: "Shipments",
