@@ -37,7 +37,14 @@ type Expense = {
   hidden_from_dashboard?: boolean | null;
 };
 
-type ExpenseCategory = "Equipment" | "Professional fees" | "Tax" | "Shipping" | "VAT" | "Advertising";
+type ExpenseCategory =
+  | "Equipment"
+  | "Professional fees"
+  | "Tax"
+  | "Shipping"
+  | "VAT"
+  | "Advertising"
+  | "Bank Charges";
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "Equipment",
@@ -46,12 +53,13 @@ const EXPENSE_CATEGORIES: ExpenseCategory[] = [
   "Shipping",
   "VAT",
   "Advertising",
+  "Bank Charges",
 ];
 
 const VAT_RATES = [0, 5, 7, 18] as const;
 
 const EXPENSES_SETUP_MESSAGE =
-  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql, 004_add_bank_accounts_to_money_records.sql, 005_adapt_money_records_to_owners.sql, 006_add_vat_expense_category.sql, and 018_add_hidden_expenses_from_dashboard.sql in Supabase, then refresh this page.";
+  "Expenses table is not set up yet. Run supabase/migrations/001_create_expenses.sql, 004_add_bank_accounts_to_money_records.sql, 005_adapt_money_records_to_owners.sql, 006_add_vat_expense_category.sql, 018_add_hidden_expenses_from_dashboard.sql, and 019_add_bank_charges_expense_category.sql in Supabase, then refresh this page.";
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
