@@ -284,6 +284,15 @@ export default function QuotesPage() {
     );
   }
 
+  function updateItemPrice(index: number, priceInclVat: number) {
+    const normalizedPrice = Math.max(priceInclVat, 0);
+    setQuoteItems((prev) =>
+      prev.map((item, i) =>
+        i === index ? { ...item, sale_price_incl_vat: normalizedPrice } : item
+      )
+    );
+  }
+
   function updateItemDiscount(index: number, discountPercent: number) {
     const normalizedDiscount = Math.min(Math.max(discountPercent, 0), 100);
     setQuoteItems((prev) =>
@@ -1012,7 +1021,12 @@ export default function QuotesPage() {
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>SKU</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Name</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Qty</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Sale incl. VAT</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>
+                    Price incl. VAT
+                    <span style={{ display: "block", marginTop: 3, color: "#64748b", fontSize: 11, fontWeight: 500 }}>
+                      This quote only
+                    </span>
+                  </th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Discount %</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Line total</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Order</th>
@@ -1037,7 +1051,17 @@ export default function QuotesPage() {
                         style={{ width: 80, padding: 6 }}
                       />
                     </td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.sale_price_incl_vat}</td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.sale_price_incl_vat}
+                        aria-label={`Price for ${item.name}`}
+                        onChange={(e) => updateItemPrice(index, Number(e.target.value || 0))}
+                        style={{ width: 110, padding: 8 }}
+                      />
+                    </td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                       <input
                         type="number"

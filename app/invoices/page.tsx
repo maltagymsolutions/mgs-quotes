@@ -286,6 +286,15 @@ export default function InvoicesPage() {
     );
   }
 
+  function updateItemPrice(index: number, priceInclVat: number) {
+    const normalizedPrice = Math.max(priceInclVat, 0);
+    setInvoiceItems((prev) =>
+      prev.map((item, i) =>
+        i === index ? { ...item, sale_price_incl_vat: normalizedPrice } : item
+      )
+    );
+  }
+
   function updateItemDiscount(index: number, discountPercent: number) {
     const normalizedDiscount = Math.min(Math.max(discountPercent, 0), 100);
     setInvoiceItems((prev) =>
@@ -805,7 +814,12 @@ export default function InvoicesPage() {
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>SKU</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Name</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Qty</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Sale incl. VAT</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>
+                    Price incl. VAT
+                    <span style={{ display: "block", marginTop: 3, color: "#64748b", fontSize: 11, fontWeight: 500 }}>
+                      This invoice only
+                    </span>
+                  </th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Discount %</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Line total</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Order</th>
@@ -830,7 +844,17 @@ export default function InvoicesPage() {
                        style={{ width: 90, padding: 10 }}
                      />
                    </td>
-                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{money(item.sale_price_incl_vat)}</td>
+                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                     <input
+                       type="number"
+                       min="0"
+                       step="0.01"
+                       value={item.sale_price_incl_vat}
+                       aria-label={`Price for ${item.name}`}
+                       onChange={(e) => updateItemPrice(index, Number(e.target.value || 0))}
+                       style={{ width: 120, padding: 10 }}
+                     />
+                   </td>
                    <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                      <input
                        type="number"

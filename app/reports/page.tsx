@@ -6,6 +6,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Landmark,
   RefreshCw,
   TrendingDown,
   TrendingUp,
@@ -17,6 +18,9 @@ import {
   type IncomeExpenseReport,
   type ReportBreakdownRow,
 } from "@/src/lib/financial-report";
+import { type VatRateBreakdownRow, type VatReport } from "@/src/lib/vat-report";
+
+type ReportMode = "income-expenses" | "vat";
 
 function localIsoDate(date: Date) {
   const year = date.getFullYear();
@@ -46,7 +50,9 @@ export default function ReportsPage() {
   const today = useMemo(() => new Date(), []);
   const [dateFrom, setDateFrom] = useState(`${today.getFullYear()}-01-01`);
   const [dateTo, setDateTo] = useState(localIsoDate(today));
+  const [reportMode, setReportMode] = useState<ReportMode>("income-expenses");
   const [report, setReport] = useState<IncomeExpenseReport | null>(null);
+  const [vatReport, setVatReport] = useState<VatReport | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -55,7 +61,8 @@ export default function ReportsPage() {
     setMessage("");
 
     try {
-      const response = await fetch(`/api/reports/income-expenses${queryString(from, to)}`, {
+      const endpoint = reportMode === "vat" ? "/api/reports/vat" : "/api/reports/income-expenses";
+      const response = await fetch(`${endpoint}${queryString(from, to)}`, {
         cache: "no-store",
       });
       const payload = await response.json();
@@ -64,14 +71,22 @@ export default function ReportsPage() {
         throw new Error(payload.error || "Unable to load report.");
       }
 
-      setReport(payload as IncomeExpenseReport);
+      if (reportMode === "vat") {
+        setVatReport(payload as VatReport);
+      } else {
+        setReport(payload as IncomeExpenseReport);
+      }
     } catch (error) {
-      setReport(null);
+      if (reportMode === "vat") {
+        setVatReport(null);
+      } else {
+        setReport(null);
+      }
       setMessage(error instanceof Error ? error.message : "Unable to load report.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [reportMode]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadReport(dateFrom, dateTo), 0);
@@ -94,22 +109,24 @@ export default function ReportsPage() {
   }
 
   const exportQuery = queryString(dateFrom, dateTo);
+  const exportBase = reportMode === "vat" ? "/api/reports/vat" : "/api/reports/income-expenses";
+  const activeReport = reportMode === "vat" ? vatReport : report;
 
   return (
     <AppPage
       title="Financial Reports"
-      description="Review income and expenses for any period, then export a detailed Excel workbook or PDF report."
+      description="Review income, expenses, and VAT for any period, then export a detailed Excel workbook or PDF report."
       actions={
         <>
           <a
-            href={`/api/reports/income-expenses/excel${exportQuery}`}
+            href={`${exportBase}/excel${exportQuery}`}
             className="inline-flex min-h-10 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-bold !text-white no-underline transition hover:bg-emerald-700"
           >
             <FileSpreadsheet size={16} aria-hidden="true" />
             Excel
           </a>
           <a
-            href={`/api/reports/income-expenses/pdf${exportQuery}`}
+            href={`${exportBase}/pdf${exportQuery}`}
             className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/25 px-3 text-sm font-bold !text-white no-underline transition hover:bg-white/10"
           >
             <FileText size={16} aria-hidden="true" />
@@ -118,12 +135,36 @@ export default function ReportsPage() {
         </>
       }
     >
+      <div className="mb-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm" role="tablist" aria-label="Report type">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={reportMode === "income-expenses"}
+          onClick={() => setReportMode("income-expenses")}
+          className={`h-10 !rounded-md px-4 text-sm ${reportMode === "income-expenses" ? "!border-slate-950 !bg-slate-950 !text-white" : "!border-transparent !bg-white !text-slate-600"}`}
+        >
+          Income & Expenses
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={reportMode === "vat"}
+          onClick={() => setReportMode("vat")}
+          className={`inline-flex h-10 items-center gap-2 !rounded-md px-4 text-sm ${reportMode === "vat" ? "!border-slate-950 !bg-slate-950 !text-white" : "!border-transparent !bg-white !text-slate-600"}`}
+        >
+          <Landmark size={16} aria-hidden="true" />
+          VAT Report
+        </button>
+      </div>
+
       <section className="mb-5 p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <h2 className="!mb-1">Report Period</h2>
             <p className="m-0 text-sm text-slate-500">
-              Income follows invoice issue dates. Expenses marked as hidden are listed separately and excluded from totals.
+              {reportMode === "vat"
+                ? "Output VAT follows invoice issue dates. Recoverable VAT follows included expense dates."
+                : "Income follows invoice issue dates. Expenses marked as hidden are listed separately and excluded from totals."}
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
@@ -176,9 +217,9 @@ export default function ReportsPage() {
         </div>
       ) : null}
 
-      {loading && !report ? (
+      {loading && !activeReport ? (
         <section className="p-8 text-center text-sm font-semibold text-slate-500">Preparing report...</section>
-      ) : report ? (
+      ) : reportMode === "income-expenses" && report ? (
         <>
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -247,8 +288,98 @@ export default function ReportsPage() {
             rows={report.expenseRows.map((row) => [row.date, row.supplier, row.description, row.category, row.paidFrom, money(row.amountExclVat), money(row.vatAmount), money(row.amountInclVat)])}
           />
         </>
+      ) : reportMode === "vat" && vatReport ? (
+        <VatReportView report={vatReport} />
       ) : null}
     </AppPage>
+  );
+}
+
+function VatReportView({ report }: { report: VatReport }) {
+  const positionLabel = report.summary.vatPosition > 0 ? "VAT payable" : report.summary.vatPosition < 0 ? "VAT credit / overpaid" : "VAT settled";
+
+  return (
+    <>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="m-0 text-lg font-bold text-slate-950">{reportPeriodLabel(report.period)}</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            {report.salesRows.length} sales invoice(s), {report.purchaseRows.length} purchase record(s), and {report.paymentRows.length} VAT payment(s)
+          </p>
+        </div>
+        <div className="flex gap-2 text-xs font-semibold text-slate-500">
+          <Download size={15} aria-hidden="true" />
+          Exports use this exact report period
+        </div>
+      </div>
+
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Output VAT" value={report.summary.outputVat} icon={TrendingUp} tone="red" />
+        <Metric label="Recoverable input VAT" value={report.summary.recoverableInputVat} icon={TrendingDown} tone="green" />
+        <Metric label="VAT payments" value={report.summary.vatPayments} icon={Landmark} tone="slate" />
+        <Metric label={positionLabel} value={report.summary.vatPosition} icon={WalletCards} tone={report.summary.vatPosition > 0 ? "red" : "green"} />
+      </div>
+
+      <div className={`mb-5 rounded-lg border p-4 text-sm ${report.summary.vatPosition > 0 ? "border-red-200 bg-red-50 text-red-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+        <strong>{positionLabel}: {money(Math.abs(report.summary.vatPosition))}</strong>
+        <span className="ml-2">Output VAT less recoverable input VAT and recorded VAT payments.</span>
+      </div>
+
+      <div className="mb-5 grid gap-4 xl:grid-cols-2">
+        <VatRateBreakdown title="Sales by VAT Rate" rows={report.salesByVatRate} vatLabel="Output VAT" />
+        <VatRateBreakdown title="Purchases by VAT Rate" rows={report.purchasesByVatRate} vatLabel="Input VAT" />
+      </div>
+
+      <DetailTable
+        title="Sales VAT Detail"
+        headings={["Date", "Invoice", "Client", "Status", "VAT Rate", "Taxable Amount", "Output VAT", "Incl. VAT"]}
+        rows={report.salesRows.map((row) => [row.date, row.invoiceNumber, row.client, row.status, `${row.vatRate}%`, money(row.amountExclVat), money(row.vatAmount), money(row.amountInclVat)])}
+      />
+      <DetailTable
+        title="Purchase VAT Detail"
+        headings={["Date", "Supplier", "Description", "Category", "VAT Rate", "Taxable Amount", "Input VAT", "Incl. VAT"]}
+        rows={report.purchaseRows.map((row) => [row.date, row.supplier, row.description, row.category, `${row.vatRate}%`, money(row.amountExclVat), money(row.vatAmount), money(row.amountInclVat)])}
+      />
+      {report.paymentRows.length > 0 ? (
+        <DetailTable
+          title="VAT Payments"
+          headings={["Date", "Paid To", "Description", "Paid From", "Amount"]}
+          rows={report.paymentRows.map((row) => [row.date, row.supplier, row.description, row.paidFrom, money(row.amountInclVat)])}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function VatRateBreakdown({ title, rows, vatLabel }: { title: string; rows: VatRateBreakdownRow[]; vatLabel: string }) {
+  return (
+    <section className="min-w-0 p-4 sm:p-5">
+      <h2>{title}</h2>
+      {rows.length === 0 ? <p className="m-0 text-sm text-slate-500">No records in this period.</p> : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[520px] border-collapse">
+            <thead>
+              <tr>
+                {['Rate', 'Records', 'Taxable Amount', vatLabel, 'Incl. VAT'].map((heading, index) => (
+                  <th key={heading} className={`border-b border-slate-200 px-3 py-3 text-xs uppercase tracking-[0.08em] text-slate-500 ${index < 2 ? "text-left" : "text-right"}`}>{heading}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.vatRate}>
+                  <td className="border-b border-slate-100 px-3 py-3 font-bold">{row.vatRate}%</td>
+                  <td className="border-b border-slate-100 px-3 py-3">{row.count}</td>
+                  <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums">{money(row.taxableAmount)}</td>
+                  <td className="border-b border-slate-100 px-3 py-3 text-right font-bold tabular-nums">{money(row.vatAmount)}</td>
+                  <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums">{money(row.amountInclVat)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -304,4 +435,3 @@ function DetailTable({ title, headings, rows }: { title: string; headings: strin
     </section>
   );
 }
-

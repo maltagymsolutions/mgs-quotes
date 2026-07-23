@@ -20,6 +20,7 @@ export type ReportIncomeRow = {
   invoiceNumber: string;
   client: string;
   status: string;
+  vatRate: number;
   amountExclVat: number;
   vatAmount: number;
   amountInclVat: number;
@@ -222,6 +223,7 @@ export function buildIncomeExpenseReport(
         invoiceNumber: invoice.invoice_number,
         client: client?.company_name || client?.private_name || "Client",
         status: invoice.status,
+        vatRate: Number(invoice.vat_rate || 0),
         amountExclVat: calculated.amountExclVat,
         vatAmount: calculated.vatAmount,
         amountInclVat,
@@ -339,4 +341,3 @@ export function reportPeriodLabel(period: ReportPeriod) {
   if (period.to) return `Up to ${period.to}`;
   return "All time";
 }
-
