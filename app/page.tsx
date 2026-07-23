@@ -464,23 +464,28 @@ export default function HomePage() {
 
     expenses
       .filter((expense) => isDateInRange(expense.expense_date, dateFrom, dateTo))
-      .filter((expense) => !expense.hidden_from_dashboard)
       .forEach((expense) => {
       const amount = Number(expense.amount_incl_vat || 0);
       const isVatPayment = expense.category === "VAT";
+      const expenseVatAmount = isVatPayment
+        ? 0
+        : calculateVatFromInclusive(amount, Number(expense.vat_rate || 0));
+      const expenseExclVat = round2(amount - expenseVatAmount);
+
+      if (isVatPayment) {
+        vatPayments = round2(vatPayments + amount);
+      } else {
+        expenseVat = round2(expenseVat + expenseVatAmount);
+      }
+
+      if (expense.hidden_from_dashboard) return;
+
       const bankAccount = resolveBankAccount(expense.bank_account);
       if (!isOwner(bankAccount)) {
         totalExpenses = round2(totalExpenses + amount);
-        const expenseVatAmount = isVatPayment
-          ? 0
-          : calculateVatFromInclusive(amount, Number(expense.vat_rate || 0));
-        const expenseExclVat = round2(amount - expenseVatAmount);
 
-        if (isVatPayment) {
-          vatPayments = round2(vatPayments + amount);
-        } else {
+        if (!isVatPayment) {
           totalExpensesExclVat = round2(totalExpensesExclVat + expenseExclVat);
-          expenseVat = round2(expenseVat + expenseVatAmount);
 
           if (
             expense.category !== "Equipment" &&
@@ -562,16 +567,9 @@ export default function HomePage() {
       });
 
       totalExpenses = round2(totalExpenses + amount);
-      const expenseVatAmount = isVatPayment
-        ? 0
-        : calculateVatFromInclusive(amount, Number(expense.vat_rate || 0));
-      const expenseExclVat = round2(amount - expenseVatAmount);
 
-      if (isVatPayment) {
-        vatPayments = round2(vatPayments + amount);
-      } else {
+      if (!isVatPayment) {
         totalExpensesExclVat = round2(totalExpensesExclVat + expenseExclVat);
-        expenseVat = round2(expenseVat + expenseVatAmount);
 
         if (
           expense.category !== "Equipment" &&

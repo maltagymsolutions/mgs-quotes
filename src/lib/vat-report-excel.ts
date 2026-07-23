@@ -168,7 +168,7 @@ export async function buildVatReportWorkbook(report: VatReport) {
     color: { argb: report.summary.vatPosition > 0 ? RED : GREEN },
   };
   summary.addRow([]);
-  summary.addRow(["Positive VAT position means VAT remains payable. A negative position means a credit or overpayment."]);
+  summary.addRow(["Positive VAT position means VAT remains payable. Dashboard-hidden expenses remain included in VAT calculations."]);
   summary.mergeCells(12, 1, 12, 2);
   summary.getCell("A12").font = { italic: true, color: { argb: "FF64748B" } };
 
@@ -183,4 +183,3 @@ export async function buildVatReportWorkbook(report: VatReport) {
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
-

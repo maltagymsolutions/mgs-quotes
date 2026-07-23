@@ -687,7 +687,7 @@ export default function ExpensesPage() {
             <span>
               <strong style={{ display: "block", color: "#111827" }}>Hide from dashboard calculations</strong>
               <span style={{ display: "block", marginTop: 3, color: "#6b7280", fontSize: 13 }}>
-                The expense stays in this list, but dashboard expense totals, VAT, owner balances, and category/monthly breakdowns omit it.
+                The expense stays in this list and VAT calculations, but dashboard expense totals, profit, owner balances, and category/monthly breakdowns omit it.
               </span>
             </span>
           </label>

@@ -163,7 +163,7 @@ export default function ReportsPage() {
             <h2 className="!mb-1">Report Period</h2>
             <p className="m-0 text-sm text-slate-500">
               {reportMode === "vat"
-                ? "Output VAT follows invoice issue dates. Recoverable VAT follows included expense dates."
+                ? "Output VAT follows invoice issue dates. Recoverable VAT includes all expenses, even those hidden from dashboard calculations."
                 : "Income follows invoice issue dates. Expenses marked as hidden are listed separately and excluded from totals."}
             </p>
           </div>
@@ -324,6 +324,12 @@ function VatReportView({ report }: { report: VatReport }) {
         <strong>{positionLabel}: {money(Math.abs(report.summary.vatPosition))}</strong>
         <span className="ml-2">Output VAT less recoverable input VAT and recorded VAT payments.</span>
       </div>
+
+      {report.summary.dashboardHiddenExpenseCount > 0 ? (
+        <div className="mb-5 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+          <strong>{report.summary.dashboardHiddenExpenseCount} dashboard-hidden expense(s)</strong> are included in this VAT calculation.
+        </div>
+      ) : null}
 
       <div className="mb-5 grid gap-4 xl:grid-cols-2">
         <VatRateBreakdown title="Sales by VAT Rate" rows={report.salesByVatRate} vatLabel="Output VAT" />

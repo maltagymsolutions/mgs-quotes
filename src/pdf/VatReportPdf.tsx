@@ -70,7 +70,9 @@ export default function VatReportPdf({ report }: { report: VatReport }) {
           <View style={styles.metric}><Text style={styles.metricLabel}>VAT PAYMENTS</Text><Text style={styles.metricValue}>{money(report.summary.vatPayments)}</Text></View>
           <View style={styles.metric}><Text style={styles.metricLabel}>VAT POSITION</Text><Text style={styles.metricValue}>{money(report.summary.vatPosition)}</Text></View>
         </View>
-        <Text style={styles.note}>Positive VAT position means VAT remains payable. A negative position means a credit or overpayment. Expenses hidden from calculations are excluded.</Text>
+        <Text style={styles.note}>
+          Positive VAT position means VAT remains payable. A negative position means a credit or overpayment. Expenses hidden from dashboard calculations remain included in this VAT report.
+        </Text>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Sales by VAT Rate</Text>
@@ -151,4 +153,3 @@ export default function VatReportPdf({ report }: { report: VatReport }) {
     </Document>
   );
 }
-

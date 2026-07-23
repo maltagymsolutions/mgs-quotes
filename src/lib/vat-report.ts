@@ -26,7 +26,7 @@ export type VatReport = {
     vatPayments: number;
     vatDueBeforePayments: number;
     vatPosition: number;
-    excludedExpenseCount: number;
+    dashboardHiddenExpenseCount: number;
   };
   salesByVatRate: VatRateBreakdownRow[];
   purchasesByVatRate: VatRateBreakdownRow[];
@@ -65,13 +65,28 @@ function buildRateBreakdown<T extends { vatRate: number; amountExclVat: number; 
 }
 
 export function buildVatReport(report: IncomeExpenseReport): VatReport {
-  const purchaseRows = report.expenseRows.filter((row) => row.category !== "VAT");
-  const paymentRows = report.expenseRows.filter((row) => row.category === "VAT");
+  const vatExpenseRows = [
+    ...report.expenseRows,
+    ...report.excludedExpenseRows,
+  ].sort(
+    (a, b) => b.date.localeCompare(a.date) || a.supplier.localeCompare(b.supplier)
+  );
+  const purchaseRows = vatExpenseRows.filter((row) => row.category !== "VAT");
+  const paymentRows = vatExpenseRows.filter((row) => row.category === "VAT");
+  const taxablePurchases = round2(
+    purchaseRows.reduce((sum, row) => sum + row.amountExclVat, 0)
+  );
+  const recoverableInputVat = round2(
+    purchaseRows.reduce((sum, row) => sum + row.vatAmount, 0)
+  );
   const purchasesInclVat = round2(
     purchaseRows.reduce((sum, row) => sum + row.amountInclVat, 0)
   );
+  const vatPayments = round2(
+    paymentRows.reduce((sum, row) => sum + row.amountInclVat, 0)
+  );
   const vatDueBeforePayments = round2(
-    report.summary.incomeVat - report.summary.recoverableVat
+    report.summary.incomeVat - recoverableInputVat
   );
 
   return {
@@ -81,13 +96,13 @@ export function buildVatReport(report: IncomeExpenseReport): VatReport {
       taxableSales: report.summary.incomeExclVat,
       outputVat: report.summary.incomeVat,
       salesInclVat: report.summary.incomeInclVat,
-      taxablePurchases: report.summary.expensesExclVat,
-      recoverableInputVat: report.summary.recoverableVat,
+      taxablePurchases,
+      recoverableInputVat,
       purchasesInclVat,
-      vatPayments: report.summary.vatPayments,
+      vatPayments,
       vatDueBeforePayments,
-      vatPosition: round2(vatDueBeforePayments - report.summary.vatPayments),
-      excludedExpenseCount: report.summary.excludedExpenseCount,
+      vatPosition: round2(vatDueBeforePayments - vatPayments),
+      dashboardHiddenExpenseCount: report.excludedExpenseRows.length,
     },
     salesByVatRate: buildRateBreakdown(report.incomeRows),
     purchasesByVatRate: buildRateBreakdown(purchaseRows),
