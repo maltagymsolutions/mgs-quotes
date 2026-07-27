@@ -7,6 +7,7 @@ import {
   View,
 } from "@react-pdf/renderer";
 import { formatDisplayDate } from "@/src/lib/format-date";
+import { normalizePackageContents } from "@/src/lib/package-contents";
 
 type DeliveryReceiptPdfProps = {
   invoice: {
@@ -20,6 +21,7 @@ type DeliveryReceiptPdfProps = {
     id: string;
     name: string;
     qty: number | string;
+    package_contents?: string[] | null;
   }[];
   companySettings?: {
     vat_number?: string | null;
@@ -107,6 +109,13 @@ const styles = StyleSheet.create({
   },
   bulletText: {
     flex: 1,
+  },
+  packageContents: {
+    marginTop: 3,
+    paddingLeft: 15,
+    color: "#4b5563",
+    fontSize: 9,
+    lineHeight: 1.4,
   },
   confirmation: {
     borderTopWidth: 0.7,
@@ -201,9 +210,14 @@ export default function DeliveryReceiptPdf({
         {items.map((item) => (
           <View key={item.id} style={styles.bulletRow}>
             <Text style={styles.bullet}>•</Text>
-            <Text style={styles.bulletText}>
-              {quantityLabel(item.qty)} × {item.name}
-            </Text>
+            <View style={styles.bulletText}>
+              <Text>{quantityLabel(item.qty)} x {item.name}</Text>
+              {normalizePackageContents(item.package_contents).length > 0 ? (
+                <Text style={styles.packageContents}>
+                  Includes: {normalizePackageContents(item.package_contents).join(", ")}
+                </Text>
+              ) : null}
+            </View>
           </View>
         ))}
 

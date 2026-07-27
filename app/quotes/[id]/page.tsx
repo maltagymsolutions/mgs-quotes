@@ -5,6 +5,7 @@ import { Fragment, useEffect, useState } from "react";
 import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
+import { normalizePackageContents } from "@/src/lib/package-contents";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type PageProps = {
@@ -43,6 +44,7 @@ type QuoteItem = {
   sale_price_incl_vat: number | string;
   qty: number | string;
   item_discount_percent?: number | string | null;
+  package_contents?: string[] | null;
 };
 
 function round2(value: number) {
@@ -326,7 +328,15 @@ export default function QuoteDetailPage({ params }: PageProps) {
                     <Fragment key={item.id}>
                       <tr>
                         <td style={{ padding: 6, borderTop: "1px solid #ddd", fontSize: 12, lineHeight: 1.15, maxWidth: 260, verticalAlign: "top" }}>
-                          {item.name}
+                          <strong>{item.name}</strong>
+                          {normalizePackageContents(item.package_contents).length > 0 ? (
+                            <div style={{ marginTop: 5, color: "#4b5563", fontSize: 10.5, lineHeight: 1.4 }}>
+                              <span style={{ display: "block", fontWeight: 700 }}>Package includes:</span>
+                              {normalizePackageContents(item.package_contents).map((content, index) => (
+                                <span key={`${content}-${index}`} style={{ display: "block" }}>- {content}</span>
+                              ))}
+                            </div>
+                          ) : null}
                         </td>
                         <td style={{ padding: 6, borderTop: "1px solid #ddd", textAlign: "center", fontSize: 12, lineHeight: 1.15, verticalAlign: "top" }}>
                           {item.qty}

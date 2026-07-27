@@ -38,7 +38,7 @@ export async function GET(
       supabase.from("clients").select("*").eq("id", invoice.client_id).single(),
       supabase
         .from("invoice_items")
-        .select("id, name, qty")
+        .select("id, name, qty, package_contents")
         .eq("invoice_id", invoice.id),
       supabase.from("company_settings").select("vat_number").limit(1).single(),
     ]);

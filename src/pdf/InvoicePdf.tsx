@@ -19,6 +19,7 @@ import {
   splitTextLines,
 } from "@/src/lib/invoice-text";
 import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
+import { normalizePackageContents } from "@/src/lib/package-contents";
 
 type InvoicePdfProps = {
   invoice: {
@@ -48,6 +49,7 @@ type InvoicePdfProps = {
     sale_price_incl_vat: number | string;
     qty: number | string;
     item_discount_percent?: number | string | null;
+    package_contents?: string[] | null;
   }[];
   companySettings?: {
     vat_number?: string | null;
@@ -94,6 +96,19 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontStyle: "italic",
     color: "#555555",
+  },
+  packageContents: {
+    marginTop: 3,
+    gap: 1,
+  },
+  packageLabel: {
+    fontSize: 8,
+    fontWeight: 700,
+    color: "#475569",
+  },
+  packageItem: {
+    fontSize: 8,
+    color: "#475569",
   },
   footerRow: { flexDirection: "row" },
   footerLabel: { width: "83%", padding: 6, borderTopWidth: 1, borderTopColor: "#cccccc" },
@@ -235,8 +250,18 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
 
                 return (
                   <Fragment key={item.id}>
-                    <View style={styles.tr}>
-                      <Text style={[styles.td, styles.colDesc]}>{item.name}</Text>
+                    <View style={styles.tr} wrap={false}>
+                      <View style={[styles.td, styles.colDesc]}>
+                        <Text>{item.name}</Text>
+                        {normalizePackageContents(item.package_contents).length > 0 ? (
+                          <View style={styles.packageContents}>
+                            <Text style={styles.packageLabel}>Package includes:</Text>
+                            {normalizePackageContents(item.package_contents).map((content, index) => (
+                              <Text key={`${content}-${index}`} style={styles.packageItem}>- {content}</Text>
+                            ))}
+                          </View>
+                        ) : null}
+                      </View>
                       <Text style={[styles.td, styles.colQty]}>{item.qty}</Text>
                       <Text style={[styles.td, styles.colVat]}>{invoice.vat_rate}%</Text>
                       <Text style={[styles.td, styles.colUnit]}>{money(unitDisplay)}</Text>

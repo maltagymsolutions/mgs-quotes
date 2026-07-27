@@ -24,6 +24,7 @@ type InvoiceItem = {
   id: string;
   name: string;
   qty: number | string;
+  package_contents?: string[] | null;
 };
 
 function todayDate() {
@@ -87,7 +88,7 @@ export default function DeliveryReceiptSetupPage({ params }: PageProps) {
             .single(),
           supabase
             .from("invoice_items")
-            .select("id, name, qty")
+            .select("id, name, qty, package_contents")
             .eq("invoice_id", invoiceData.id),
         ]);
 
@@ -261,7 +262,12 @@ export default function DeliveryReceiptSetupPage({ params }: PageProps) {
                 onChange={() => toggleItem(item.id)}
               />
               <span>
-                <strong>{quantityLabel(item.qty)} ×</strong> {item.name}
+                <strong>{quantityLabel(item.qty)} x</strong> {item.name}
+                {item.package_contents?.length ? (
+                  <span style={{ display: "block", marginTop: 4, color: "#6b7280", fontSize: 13 }}>
+                    Includes: {item.package_contents.join(", ")}
+                  </span>
+                ) : null}
               </span>
             </label>
           ))}

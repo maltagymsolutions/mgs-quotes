@@ -13,5 +13,6 @@ export const INVENTORY_CATEGORIES = [
   "Kettlebells",
   "Upright Bike",
   "Weight Stand",
+  "Packages",
   "Other",
 ] as const;

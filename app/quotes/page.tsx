@@ -7,6 +7,7 @@ import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import { INVENTORY_CATEGORIES } from "@/src/lib/inventory-categories";
 import { calculateItemLineTotals, calculateItemsTotals } from "@/src/lib/item-discounts";
+import { normalizePackageContents } from "@/src/lib/package-contents";
 import { formatQuantitySaveError } from "@/src/lib/quantity-save-error";
 import { createClient } from "@/src/lib/supabase-browser";
 
@@ -29,6 +30,7 @@ type InventoryItem = {
   category: string | null;
   cost_price: number;
   sale_price_incl_vat: number;
+  package_contents?: string[] | null;
 };
 
 type QuoteItemDraft = {
@@ -39,6 +41,7 @@ type QuoteItemDraft = {
   cost_price: number;
   sale_price_incl_vat: number;
   item_discount_percent: number;
+  package_contents: string[];
 };
 
 type SavedQuote = {
@@ -64,6 +67,7 @@ type QuoteItemRow = {
   cost_price: number;
   sale_price_incl_vat: number;
   item_discount_percent?: number | null;
+  package_contents?: string[] | null;
 };
 
 type CompanySettings = {
@@ -237,6 +241,7 @@ export default function QuotesPage() {
       cost_price: Number(item.cost_price),
       sale_price_incl_vat: Number(item.sale_price_incl_vat),
       item_discount_percent: Number(item.item_discount_percent || 0),
+      package_contents: normalizePackageContents(item.package_contents),
     }));
 
     setEditingQuoteId(quote.id);
@@ -273,6 +278,7 @@ export default function QuotesPage() {
           cost_price: Number(item.cost_price),
           sale_price_incl_vat: Number(item.sale_price_incl_vat),
           item_discount_percent: 0,
+          package_contents: normalizePackageContents(item.package_contents),
         },
       ];
     });
@@ -545,6 +551,7 @@ export default function QuotesPage() {
         cost_price: item.cost_price,
         sale_price_incl_vat: item.sale_price_incl_vat,
         item_discount_percent: item.item_discount_percent,
+        package_contents: item.package_contents,
       }));
 
       const { error: insertItemsError } = await supabase.from("quote_items").insert(itemsToInsert);
@@ -597,6 +604,7 @@ export default function QuotesPage() {
       cost_price: item.cost_price,
       sale_price_incl_vat: item.sale_price_incl_vat,
       item_discount_percent: item.item_discount_percent,
+      package_contents: item.package_contents,
     }));
 
     const { error: itemsError } = await supabase.from("quote_items").insert(itemsToInsert);
@@ -681,6 +689,7 @@ export default function QuotesPage() {
       cost_price: item.cost_price,
       sale_price_incl_vat: item.sale_price_incl_vat,
       item_discount_percent: Number(item.item_discount_percent || 0),
+      package_contents: normalizePackageContents(item.package_contents),
     }));
 
     const { error: invoiceItemsError } = await supabase
@@ -1001,6 +1010,9 @@ export default function QuotesPage() {
               {filteredInventoryOptions.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.sku} - {item.name}
+                  {normalizePackageContents(item.package_contents).length > 0
+                    ? ` (package: ${normalizePackageContents(item.package_contents).length} items)`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -1040,7 +1052,17 @@ export default function QuotesPage() {
                   return (
                   <tr key={`${item.inventory_item_id}-${index}`}>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.sku}</td>
-                    <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.name}</td>
+                    <td style={{ borderBottom: "1px solid #eee", padding: 8, verticalAlign: "top" }}>
+                      <strong>{item.name}</strong>
+                      {item.package_contents.length > 0 ? (
+                        <div style={{ marginTop: 5, color: "#475569", fontSize: 12, lineHeight: 1.45 }}>
+                          <span style={{ display: "block", fontWeight: 700 }}>Package includes:</span>
+                          {item.package_contents.map((content, contentIndex) => (
+                            <span key={`${content}-${contentIndex}`} style={{ display: "block" }}>- {content}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>
                       <input
                         type="number"

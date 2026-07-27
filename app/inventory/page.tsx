@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppPage } from "@/src/components/app-page";
 import { INVENTORY_CATEGORIES } from "@/src/lib/inventory-categories";
+import {
+  normalizePackageContents,
+  packageContentsToText,
+  parsePackageContentsText,
+} from "@/src/lib/package-contents";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type UserInfo = {
@@ -16,6 +21,7 @@ type InventoryItem = {
   category: string | null;
   cost_price: number;
   sale_price_incl_vat: number;
+  package_contents?: string[] | null;
 };
 
 type CsvRow = {
@@ -24,6 +30,7 @@ type CsvRow = {
   category: string;
   cost_price: number;
   sale_price_incl_vat: number;
+  package_contents: string[];
 };
 
 const VAT_RATE = 18;
@@ -54,8 +61,9 @@ export default function InventoryPage() {
   const [itemName, setItemName] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [salePriceInclVat, setSalePriceInclVat] = useState("");
+  const [packageContentsText, setPackageContentsText] = useState("");
   const [csvText, setCsvText] = useState(
-    "sku,name,category,cost_price,sale_price_incl_vat\nFIT-001,Fitness Bench,Benches,100,150"
+    "sku,name,category,cost_price,sale_price_incl_vat,package_contents\nFIT-001,Fitness Bench,Benches,100,150,\nPKG-001,Home Gym Package,Strength,500,899,Bench|Barbell|80 kg plate set"
   );
   const [category, setCategory] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -122,6 +130,7 @@ export default function InventoryPage() {
       category: category || null,
       cost_price: Number(costPrice || 0),
       sale_price_incl_vat: Number(salePriceInclVat || 0),
+      package_contents: parsePackageContentsText(packageContentsText),
     });
 
     if (error) {
@@ -141,6 +150,7 @@ export default function InventoryPage() {
     setItemName(item.name || "");
     setCostPrice(String(item.cost_price ?? ""));
     setSalePriceInclVat(String(item.sale_price_incl_vat ?? ""));
+    setPackageContentsText(packageContentsToText(item.package_contents));
   }
 
   function clearForm() {
@@ -150,6 +160,7 @@ export default function InventoryPage() {
     setItemName("");
     setCostPrice("");
     setSalePriceInclVat("");
+    setPackageContentsText("");
   }
 
   async function updateInventoryItem() {
@@ -165,6 +176,7 @@ export default function InventoryPage() {
         category: category || null,
         cost_price: Number(costPrice || 0),
         sale_price_incl_vat: Number(salePriceInclVat || 0),
+        package_contents: parsePackageContentsText(packageContentsText),
       })
       .eq("id", editingItemId);
 
@@ -202,6 +214,10 @@ export default function InventoryPage() {
         category: row.category || "",
         cost_price: Number(row.cost_price || 0),
         sale_price_incl_vat: Number(row.sale_price_incl_vat || 0),
+        package_contents: (row.package_contents || "")
+          .split("|")
+          .map((item) => item.trim())
+          .filter(Boolean),
       };
     });
   }
@@ -246,6 +262,7 @@ export default function InventoryPage() {
       category: row.category || null,
       cost_price: row.cost_price,
       sale_price_incl_vat: row.sale_price_incl_vat,
+      package_contents: row.package_contents,
     }));
   
     const { error } = await supabase.from("inventory_items").insert(rowsToInsert);
@@ -270,7 +287,10 @@ export default function InventoryPage() {
         (item) =>
           item.sku.toLowerCase().includes(q) ||
           item.name.toLowerCase().includes(q) ||
-          (item.category || "").toLowerCase().includes(q)
+          (item.category || "").toLowerCase().includes(q) ||
+          normalizePackageContents(item.package_contents).some((content) =>
+            content.toLowerCase().includes(q)
+          )
       );
     }
   
@@ -296,7 +316,7 @@ export default function InventoryPage() {
   return (
     <AppPage
       title="Inventory"
-      description="Manage equipment SKUs, categories, costs, sale prices, margin, and CSV imports."
+      description="Manage equipment SKUs, package contents, categories, costs, sale prices, margin, and CSV imports."
       actions={
         <div className="rounded-md border border-white/15 px-3 py-2 text-sm text-slate-200">
           <span className="mr-3">{user?.email || "-"}</span>
@@ -377,6 +397,19 @@ export default function InventoryPage() {
               </div>
             </div>
 
+            <div>
+              <label>Package Contents (optional)</label>
+              <textarea
+                value={packageContentsText}
+                onChange={(e) => setPackageContentsText(e.target.value)}
+                placeholder={"One included item per line\nExample: Adjustable bench\n20 kg barbell\n80 kg plate set"}
+                style={{ width: "100%", minHeight: 112, padding: 12, marginTop: 6 }}
+              />
+              <p style={{ margin: "6px 0 0", color: "#6b7280", fontSize: 13 }}>
+                These items appear beneath the package name on quotes and invoices.
+              </p>
+            </div>
+
             <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
               {editingItemId ? (
                 <>
@@ -407,7 +440,8 @@ export default function InventoryPage() {
         <section style={{ padding: 20, borderRadius: 16 }}>
           <h2 style={{ marginBottom: 12 }}>Import Inventory via CSV</h2>
       <p style={{ marginTop: 0, color: "#4b5563" }}>
-            Use columns: <code>sku,name,category,cost_price,sale_price_incl_vat</code>
+            Use columns: <code>sku,name,category,cost_price,sale_price_incl_vat,package_contents</code>.
+            Separate package contents with <code>|</code>.
           </p>
           <textarea
             style={{ width: "100%", minHeight: 220, padding: 12, marginTop: 4, fontFamily: "monospace" }}
@@ -525,7 +559,21 @@ export default function InventoryPage() {
                   return (
                     <tr key={item.id}>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, fontWeight: 700 }}>{item.sku}</td>
-                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{item.name}</td>
+                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
+                        <strong>{item.name}</strong>
+                        {normalizePackageContents(item.package_contents).length > 0 ? (
+                          <div style={{ marginTop: 6, color: "#475569", fontSize: 12, lineHeight: 1.5 }}>
+                            <span style={{ display: "block", fontWeight: 700 }}>
+                              Package includes:
+                            </span>
+                            {normalizePackageContents(item.package_contents).map((content, index) => (
+                              <span key={`${content}-${index}`} style={{ display: "block" }}>
+                                - {content}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{item.category || "-"}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{money(item.cost_price)}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{money(item.sale_price_incl_vat)}</td>
