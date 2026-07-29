@@ -292,6 +292,12 @@ export default function InvoicesPage() {
     );
   }
 
+  function updateItemName(index: number, name: string) {
+    setInvoiceItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, name } : item))
+    );
+  }
+
   function updateItemPrice(index: number, priceInclVat: number) {
     const normalizedPrice = Math.max(priceInclVat, 0);
     setInvoiceItems((prev) =>
@@ -461,6 +467,11 @@ export default function InvoicesPage() {
       return;
     }
 
+    if (invoiceItems.some((item) => !item.name.trim())) {
+      setMessage("Please enter a name for every item.");
+      return;
+    }
+
     if (editingInvoiceId) {
       setMessage("Updating invoice...");
 
@@ -498,7 +509,7 @@ export default function InvoicesPage() {
         invoice_id: editingInvoiceId,
         inventory_item_id: item.inventory_item_id || null,
         sku: item.sku,
-        name: item.name,
+        name: item.name.trim(),
         qty: item.qty,
         cost_price: item.cost_price,
         sale_price_incl_vat: item.sale_price_incl_vat,
@@ -554,7 +565,7 @@ export default function InvoicesPage() {
       invoice_id: invoiceData.id,
       inventory_item_id: item.inventory_item_id || null,
       sku: item.sku,
-      name: item.name,
+      name: item.name.trim(),
       qty: item.qty,
       cost_price: item.cost_price,
       sale_price_incl_vat: item.sale_price_incl_vat,
@@ -794,6 +805,7 @@ export default function InvoicesPage() {
           <div style={{ flex: 1, minWidth: 300 }}>
             <label>Inventory Item</label>
             <select
+              aria-label="Inventory Item"
               style={{ width: "100%", padding: 12, marginTop: 6 }}
               value={selectedInventoryId}
               onChange={(e) => setSelectedInventoryId(e.target.value)}
@@ -823,7 +835,12 @@ export default function InvoicesPage() {
               <thead>
                 <tr>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>SKU</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Name</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>
+                    Name
+                    <span style={{ display: "block", marginTop: 3, color: "#64748b", fontSize: 11, fontWeight: 500 }}>
+                      This invoice only
+                    </span>
+                  </th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>Qty</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #e5e7eb", padding: 12 }}>
                     Price incl. VAT
@@ -845,7 +862,13 @@ export default function InvoicesPage() {
                  <tr key={`${item.inventory_item_id}-${index}`}>
                    <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, fontWeight: 700 }}>{item.sku}</td>
                    <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12, verticalAlign: "top" }}>
-                     <strong>{item.name}</strong>
+                     <input
+                       type="text"
+                       value={item.name}
+                       aria-label={`Name for item ${index + 1}`}
+                       onChange={(e) => updateItemName(index, e.target.value)}
+                       style={{ width: "100%", minWidth: 220, padding: 10, fontWeight: 700 }}
+                     />
                      {item.package_contents.length > 0 ? (
                        <div style={{ marginTop: 5, color: "#475569", fontSize: 12, lineHeight: 1.45 }}>
                          <span style={{ display: "block", fontWeight: 700 }}>Package includes:</span>

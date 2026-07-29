@@ -290,6 +290,12 @@ export default function QuotesPage() {
     );
   }
 
+  function updateItemName(index: number, name: string) {
+    setQuoteItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, name } : item))
+    );
+  }
+
   function updateItemPrice(index: number, priceInclVat: number) {
     const normalizedPrice = Math.max(priceInclVat, 0);
     setQuoteItems((prev) =>
@@ -512,6 +518,11 @@ export default function QuotesPage() {
       return;
     }
 
+    if (quoteItems.some((item) => !item.name.trim())) {
+      setMessage("Please enter a name for every item.");
+      return;
+    }
+
     if (editingQuoteId) {
       setMessage("Updating quote...");
 
@@ -546,7 +557,7 @@ export default function QuotesPage() {
         quote_id: editingQuoteId,
         inventory_item_id: item.inventory_item_id || null,
         sku: item.sku,
-        name: item.name,
+        name: item.name.trim(),
         qty: item.qty,
         cost_price: item.cost_price,
         sale_price_incl_vat: item.sale_price_incl_vat,
@@ -599,7 +610,7 @@ export default function QuotesPage() {
       quote_id: quoteData.id,
       inventory_item_id: item.inventory_item_id || null,
       sku: item.sku,
-      name: item.name,
+      name: item.name.trim(),
       qty: item.qty,
       cost_price: item.cost_price,
       sale_price_incl_vat: item.sale_price_incl_vat,
@@ -1002,6 +1013,7 @@ export default function QuotesPage() {
           <div style={{ flex: 1, minWidth: 300 }}>
             <label>Inventory Item</label>
             <select
+              aria-label="Inventory Item"
               style={{ width: "100%", padding: 12, marginTop: 6 }}
               value={selectedInventoryId}
               onChange={(e) => setSelectedInventoryId(e.target.value)}
@@ -1031,7 +1043,12 @@ export default function QuotesPage() {
               <thead>
                 <tr>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>SKU</th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Name</th>
+                  <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>
+                    Name
+                    <span style={{ display: "block", marginTop: 3, color: "#64748b", fontSize: 11, fontWeight: 500 }}>
+                      This quote only
+                    </span>
+                  </th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Qty</th>
                   <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>
                     Price incl. VAT
@@ -1053,7 +1070,13 @@ export default function QuotesPage() {
                   <tr key={`${item.inventory_item_id}-${index}`}>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8 }}>{item.sku}</td>
                     <td style={{ borderBottom: "1px solid #eee", padding: 8, verticalAlign: "top" }}>
-                      <strong>{item.name}</strong>
+                      <input
+                        type="text"
+                        value={item.name}
+                        aria-label={`Name for item ${index + 1}`}
+                        onChange={(e) => updateItemName(index, e.target.value)}
+                        style={{ width: "100%", minWidth: 220, padding: 8, fontWeight: 700 }}
+                      />
                       {item.package_contents.length > 0 ? (
                         <div style={{ marginTop: 5, color: "#475569", fontSize: 12, lineHeight: 1.45 }}>
                           <span style={{ display: "block", fontWeight: 700 }}>Package includes:</span>
