@@ -105,6 +105,7 @@ export default function QuotesPage() {
   const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
+  const [duplicatingQuoteId, setDuplicatingQuoteId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState("");
   const [showNewClientForm, setShowNewClientForm] = useState(false);
   const [newClientPrivateName, setNewClientPrivateName] = useState("");
@@ -736,6 +737,97 @@ export default function QuotesPage() {
     await loadQuotes();
     await loadCompanySettings();
   }
+
+  async function duplicateQuote(quote: SavedQuote) {
+    if (!companySettings || duplicatingQuoteId) {
+      if (!companySettings) setMessage("Company settings not loaded.");
+      return;
+    }
+
+    setDuplicatingQuoteId(quote.id);
+    setMessage(`Duplicating ${quote.quote_number}...`);
+
+    try {
+      const { data: quoteItemRows, error: quoteItemsError } = await supabase
+        .from("quote_items")
+        .select("*")
+        .eq("quote_id", quote.id);
+
+      if (quoteItemsError) {
+        setMessage(quoteItemsError.message);
+        return;
+      }
+
+      if (!quoteItemRows || quoteItemRows.length === 0) {
+        setMessage("This quote has no items to duplicate.");
+        return;
+      }
+
+      const quoteNumber = buildQuoteNumber(
+        companySettings.quote_prefix,
+        companySettings.next_quote_number
+      );
+
+      const { data: duplicatedQuote, error: quoteError } = await supabase
+        .from("quotes")
+        .insert({
+          quote_number: quoteNumber,
+          client_id: quote.client_id,
+          date_issued: new Date().toISOString().slice(0, 10),
+          vat_rate: quote.vat_rate,
+          deposit_percent: quote.deposit_percent,
+          shipping_cost_incl_vat: quote.shipping_cost_incl_vat || 0,
+          discount_amount_incl_vat: quote.discount_amount_incl_vat || 0,
+          notes: quote.notes,
+          status: "Draft",
+        })
+        .select("id")
+        .single();
+
+      if (quoteError) {
+        setMessage(quoteError.message);
+        return;
+      }
+
+      const duplicatedItems = (quoteItemRows as QuoteItemRow[]).map((item) => ({
+        quote_id: duplicatedQuote.id,
+        inventory_item_id: item.inventory_item_id,
+        sku: item.sku,
+        name: item.name,
+        qty: item.qty,
+        cost_price: item.cost_price,
+        sale_price_incl_vat: item.sale_price_incl_vat,
+        item_discount_percent: Number(item.item_discount_percent || 0),
+        package_contents: normalizePackageContents(item.package_contents),
+      }));
+
+      const { error: itemsError } = await supabase.from("quote_items").insert(duplicatedItems);
+
+      if (itemsError) {
+        await supabase.from("quotes").delete().eq("id", duplicatedQuote.id);
+        setMessage(formatQuantitySaveError(itemsError.message));
+        return;
+      }
+
+      const { error: settingsError } = await supabase
+        .from("company_settings")
+        .update({ next_quote_number: companySettings.next_quote_number + 1 })
+        .eq("id", companySettings.id);
+
+      if (settingsError) {
+        await supabase.from("quote_items").delete().eq("quote_id", duplicatedQuote.id);
+        await supabase.from("quotes").delete().eq("id", duplicatedQuote.id);
+        setMessage(settingsError.message);
+        return;
+      }
+
+      setMessage(`Quote duplicated: ${quoteNumber}`);
+      await loadQuotes();
+      await loadCompanySettings();
+    } finally {
+      setDuplicatingQuoteId(null);
+    }
+  }
   
   async function archiveQuote(quoteId: string) {
     const confirmed = window.confirm("Archive this quote?");
@@ -1318,7 +1410,7 @@ export default function QuotesPage() {
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Date</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Status</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>View</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Edit</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Actions</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Convert</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Archive</th>
               </tr>
@@ -1348,17 +1440,26 @@ export default function QuotesPage() {
                     </Link>
                   </td>
                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
-                    <button
-                      onClick={() => startEditingQuote(quote)}
-                      style={{
-                        padding: "8px 12px",
-                        background: "#111827",
-                        color: "#ffffff",
-                        border: "1px solid #111827",
-                      }}
-                    >
-                      Edit
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => startEditingQuote(quote)}
+                        style={{
+                          padding: "8px 12px",
+                          background: "#111827",
+                          color: "#ffffff",
+                          border: "1px solid #111827",
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => duplicateQuote(quote)}
+                        disabled={duplicatingQuoteId !== null}
+                        style={{ padding: "8px 12px" }}
+                      >
+                        {duplicatingQuoteId === quote.id ? "Duplicating..." : "Duplicate"}
+                      </button>
+                    </div>
                   </td>
                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                     <button

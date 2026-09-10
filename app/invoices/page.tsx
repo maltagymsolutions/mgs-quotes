@@ -111,6 +111,7 @@ export default function InvoicesPage() {
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
 
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  const [duplicatingInvoiceId, setDuplicatingInvoiceId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState("");
   const [vatRate, setVatRate] = useState(18);
   const [depositPercent, setDepositPercent] = useState(50);
@@ -625,6 +626,100 @@ export default function InvoicesPage() {
     await updateInvoiceStatus(invoiceId, "Archived");
   }
 
+  async function duplicateInvoice(invoice: SavedInvoice) {
+    if (!companySettings || duplicatingInvoiceId) {
+      if (!companySettings) setMessage("Company settings not loaded.");
+      return;
+    }
+
+    setDuplicatingInvoiceId(invoice.id);
+    setMessage(`Duplicating ${invoice.invoice_number}...`);
+
+    try {
+      const { data: invoiceItemRows, error: invoiceItemsError } = await supabase
+        .from("invoice_items")
+        .select("*")
+        .eq("invoice_id", invoice.id);
+
+      if (invoiceItemsError) {
+        setMessage(invoiceItemsError.message);
+        return;
+      }
+
+      if (!invoiceItemRows || invoiceItemRows.length === 0) {
+        setMessage("This invoice has no items to duplicate.");
+        return;
+      }
+
+      const invoiceNumber = buildInvoiceNumber(
+        companySettings.invoice_prefix,
+        companySettings.next_invoice_number
+      );
+
+      const { data: duplicatedInvoice, error: invoiceError } = await supabase
+        .from("invoices")
+        .insert({
+          invoice_number: invoiceNumber,
+          client_id: invoice.client_id,
+          date_issued: new Date().toISOString().slice(0, 10),
+          vat_rate: invoice.vat_rate,
+          deposit_percent: invoice.deposit_percent,
+          shipping_cost_incl_vat: invoice.shipping_cost_incl_vat || 0,
+          discount_amount_incl_vat: invoice.discount_amount_incl_vat || 0,
+          payment_terms: invoice.payment_terms,
+          bank_details: invoice.bank_details,
+          card_payment_link: invoice.card_payment_link,
+          notes: invoice.notes,
+          status: "Unpaid",
+        })
+        .select("id")
+        .single();
+
+      if (invoiceError) {
+        setMessage(invoiceError.message);
+        return;
+      }
+
+      const duplicatedItems = (invoiceItemRows as InvoiceItemRow[]).map((item) => ({
+        invoice_id: duplicatedInvoice.id,
+        inventory_item_id: item.inventory_item_id,
+        sku: item.sku,
+        name: item.name,
+        qty: item.qty,
+        cost_price: item.cost_price,
+        sale_price_incl_vat: item.sale_price_incl_vat,
+        item_discount_percent: Number(item.item_discount_percent || 0),
+        package_contents: normalizePackageContents(item.package_contents),
+      }));
+
+      const { error: itemsError } = await supabase.from("invoice_items").insert(duplicatedItems);
+
+      if (itemsError) {
+        await supabase.from("invoices").delete().eq("id", duplicatedInvoice.id);
+        setMessage(formatQuantitySaveError(itemsError.message));
+        return;
+      }
+
+      const { error: settingsError } = await supabase
+        .from("company_settings")
+        .update({ next_invoice_number: companySettings.next_invoice_number + 1 })
+        .eq("id", companySettings.id);
+
+      if (settingsError) {
+        await supabase.from("invoice_items").delete().eq("invoice_id", duplicatedInvoice.id);
+        await supabase.from("invoices").delete().eq("id", duplicatedInvoice.id);
+        setMessage(settingsError.message);
+        return;
+      }
+
+      setMessage(`Invoice duplicated: ${invoiceNumber}`);
+      await loadInvoices();
+      await loadCompanySettings();
+    } finally {
+      setDuplicatingInvoiceId(null);
+    }
+  }
+
   return (
     <AppPage
       title="Invoices"
@@ -1121,7 +1216,7 @@ export default function InvoicesPage() {
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>View</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Receipts</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Delivery</th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Edit</th>
+                <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Actions</th>
                 <th style={{ textAlign: "left", borderBottom: "1px solid #ccc", padding: 8 }}>Archive</th>
               </tr>
             </thead>
@@ -1200,17 +1295,26 @@ export default function InvoicesPage() {
                     </Link>
                   </td>
                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
-                    <button
-                      onClick={() => startEditingInvoice(invoice)}
-                      style={{
-                        padding: "8px 12px",
-                        background: "#111827",
-                        color: "#ffffff",
-                        border: "1px solid #111827",
-                      }}
-                    >
-                      Edit
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => startEditingInvoice(invoice)}
+                        style={{
+                          padding: "8px 12px",
+                          background: "#111827",
+                          color: "#ffffff",
+                          border: "1px solid #111827",
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => duplicateInvoice(invoice)}
+                        disabled={duplicatingInvoiceId !== null}
+                        style={{ padding: "8px 12px" }}
+                      >
+                        {duplicatingInvoiceId === invoice.id ? "Duplicating..." : "Duplicate"}
+                      </button>
+                    </div>
                   </td>
                   <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                     <button
