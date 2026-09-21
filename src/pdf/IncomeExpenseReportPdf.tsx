@@ -1,205 +1,66 @@
-import {
-  Document,
-  Page,
-  StyleSheet,
-  Text,
-  View,
-} from "@react-pdf/renderer";
+import { Document } from "@react-pdf/renderer";
 import { formatDisplayDate } from "@/src/lib/format-date";
-import {
-  reportPeriodLabel,
-  type IncomeExpenseReport,
-  type ReportBreakdownRow,
-  type ReportExpenseRow,
-  type ReportIncomeRow,
-} from "@/src/lib/financial-report";
+import type { IncomeExpenseReport, ReportBreakdownRow, ReportExpenseRow } from "@/src/lib/financial-report";
+import { amount, money, DataTable, DetailPage, Metrics, ReportHeading, ReportNote, ReportPage, ResultPanel, SectionHeading, type Column, type TableRow } from "./FinancialReportLayout";
 
-const styles = StyleSheet.create({
-  page: {
-    paddingTop: 32,
-    paddingHorizontal: 32,
-    paddingBottom: 42,
-    fontFamily: "Helvetica",
-    fontSize: 8,
-    color: "#0f172a",
-  },
-  header: { marginBottom: 16, borderBottomWidth: 2, borderBottomColor: "#0f172a", paddingBottom: 10 },
-  eyebrow: { fontSize: 8, color: "#64748b", letterSpacing: 0.8, marginBottom: 4 },
-  title: { fontSize: 21, fontWeight: 700, marginBottom: 5 },
-  subtitle: { fontSize: 9, color: "#475569" },
-  section: { marginTop: 16 },
-  sectionTitle: { fontSize: 12, fontWeight: 700, marginBottom: 7 },
-  metrics: { flexDirection: "row", gap: 7 },
-  metric: { flex: 1, borderWidth: 1, borderColor: "#cbd5e1", padding: 8, minHeight: 48 },
-  metricLabel: { fontSize: 7, color: "#64748b", marginBottom: 6 },
-  metricValue: { fontSize: 13, fontWeight: 700 },
-  note: { marginTop: 8, padding: 7, backgroundColor: "#fff7ed", color: "#9a3412", lineHeight: 1.35 },
-  table: { borderWidth: 1, borderColor: "#cbd5e1" },
-  row: { flexDirection: "row", minHeight: 23 },
-  headerRow: { backgroundColor: "#0f172a", color: "#ffffff" },
-  cell: { paddingVertical: 5, paddingHorizontal: 5, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
-  headerCell: { fontWeight: 700, borderBottomWidth: 0 },
-  right: { textAlign: "right" },
-  muted: { color: "#64748b" },
-  pageNumber: { position: "absolute", bottom: 18, left: 32, right: 32, textAlign: "right", color: "#94a3b8" },
-  empty: { padding: 10, color: "#64748b" },
-});
+const summaryColumns: Column[] = [
+  { label: "Name", width: 34 }, { label: "Records", width: 10, right: true },
+  { label: "Excl. VAT", width: 20, right: true }, { label: "VAT", width: 16, right: true },
+  { label: "Incl. VAT", width: 20, right: true },
+];
+const incomeColumns: Column[] = [
+  { label: "Date", width: 13 }, { label: "Invoice", width: 15 }, { label: "Client", width: 26 },
+  { label: "Status", width: 16 }, { label: "Excl. VAT", width: 15, right: true }, { label: "Incl. VAT", width: 15, right: true },
+];
+const expenseColumns: Column[] = [
+  { label: "Date", width: 12 }, { label: "Supplier", width: 18 }, { label: "Description", width: 26 },
+  { label: "Category", width: 16 }, { label: "Excl. VAT", width: 14, right: true }, { label: "Incl. VAT", width: 14, right: true },
+];
 
-function money(value: number) {
-  return `EUR ${Number(value || 0).toFixed(2)}`;
+function summaryRows(rows: ReportBreakdownRow[]): TableRow[] {
+  return rows.map((row) => ({ key: row.label, cells: [row.label, row.count, amount(row.amountExclVat), amount(row.vatAmount), amount(row.amountInclVat)] }));
 }
 
-function SummaryTable({ rows }: { rows: ReportBreakdownRow[] }) {
-  return (
-    <View style={styles.table}>
-      <View style={[styles.row, styles.headerRow]}>
-        <Text style={[styles.cell, styles.headerCell, { width: "34%" }]}>Name</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "10%" }]}>Records</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "19%" }]}>Excl. VAT</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "18%" }]}>VAT</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "19%" }]}>Incl. VAT</Text>
-      </View>
-      {rows.length === 0 ? <Text style={styles.empty}>No records in this period.</Text> : null}
-      {rows.map((row) => (
-        <View key={row.label} style={styles.row} wrap={false}>
-          <Text style={[styles.cell, { width: "34%" }]}>{row.label}</Text>
-          <Text style={[styles.cell, styles.right, { width: "10%" }]}>{row.count}</Text>
-          <Text style={[styles.cell, styles.right, { width: "19%" }]}>{money(row.amountExclVat)}</Text>
-          <Text style={[styles.cell, styles.right, { width: "18%" }]}>{money(row.vatAmount)}</Text>
-          <Text style={[styles.cell, styles.right, { width: "19%" }]}>{money(row.amountInclVat)}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function IncomeTable({ rows }: { rows: ReportIncomeRow[] }) {
-  return (
-    <View style={styles.table}>
-      <View style={[styles.row, styles.headerRow]}>
-        <Text style={[styles.cell, styles.headerCell, { width: "12%" }]}>Date</Text>
-        <Text style={[styles.cell, styles.headerCell, { width: "15%" }]}>Invoice</Text>
-        <Text style={[styles.cell, styles.headerCell, { width: "25%" }]}>Client</Text>
-        <Text style={[styles.cell, styles.headerCell, { width: "14%" }]}>Status</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "17%" }]}>Excl. VAT</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "17%" }]}>Incl. VAT</Text>
-      </View>
-      {rows.length === 0 ? <Text style={styles.empty}>No income records in this period.</Text> : null}
-      {rows.map((row) => (
-        <View key={row.id} style={styles.row} wrap={false}>
-          <Text style={[styles.cell, { width: "12%" }]}>{formatDisplayDate(row.date)}</Text>
-          <Text style={[styles.cell, { width: "15%" }]}>{row.invoiceNumber}</Text>
-          <Text style={[styles.cell, { width: "25%" }]}>{row.client}</Text>
-          <Text style={[styles.cell, { width: "14%" }]}>{row.status}</Text>
-          <Text style={[styles.cell, styles.right, { width: "17%" }]}>{money(row.amountExclVat)}</Text>
-          <Text style={[styles.cell, styles.right, { width: "17%" }]}>{money(row.amountInclVat)}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function ExpenseTable({ rows, emptyLabel }: { rows: ReportExpenseRow[]; emptyLabel: string }) {
-  return (
-    <View style={styles.table}>
-      <View style={[styles.row, styles.headerRow]}>
-        <Text style={[styles.cell, styles.headerCell, { width: "11%" }]}>Date</Text>
-        <Text style={[styles.cell, styles.headerCell, { width: "18%" }]}>Supplier</Text>
-        <Text style={[styles.cell, styles.headerCell, { width: "25%" }]}>Description</Text>
-        <Text style={[styles.cell, styles.headerCell, { width: "16%" }]}>Category</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "15%" }]}>Excl. VAT</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "15%" }]}>Incl. VAT</Text>
-      </View>
-      {rows.length === 0 ? <Text style={styles.empty}>{emptyLabel}</Text> : null}
-      {rows.map((row) => (
-        <View key={row.id} style={styles.row} wrap={false}>
-          <Text style={[styles.cell, { width: "11%" }]}>{formatDisplayDate(row.date)}</Text>
-          <Text style={[styles.cell, { width: "18%" }]}>{row.supplier}</Text>
-          <Text style={[styles.cell, { width: "25%" }]}>{row.description}</Text>
-          <Text style={[styles.cell, { width: "16%" }]}>{row.category}</Text>
-          <Text style={[styles.cell, styles.right, { width: "15%" }]}>{money(row.amountExclVat)}</Text>
-          <Text style={[styles.cell, styles.right, { width: "15%" }]}>{money(row.amountInclVat)}</Text>
-        </View>
-      ))}
-    </View>
-  );
+function expenseRows(rows: ReportExpenseRow[]): TableRow[] {
+  return rows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.supplier, row.description, row.category, amount(row.amountExclVat), amount(row.amountInclVat)] }));
 }
 
 export default function IncomeExpenseReportPdf({ report }: { report: IncomeExpenseReport }) {
+  const name = "Income & expense report";
+  const { summary } = report;
+  const totals = ["Total", report.expenseRows.length, amount(summary.expensesExclVat), amount(summary.recoverableVat), amount(summary.expensesInclVat)];
   return (
-    <Document title="MGS Income and Expense Report" author="Malta Gym Solutions">
-      <Page size="A4" style={styles.page}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>MALTA GYM SOLUTIONS</Text>
-          <Text style={styles.title}>Income and Expense Report</Text>
-          <Text style={styles.subtitle}>
-            {reportPeriodLabel(report.period)} | Generated {new Date(report.generatedAt).toLocaleString("en-GB")}
-          </Text>
-        </View>
+    <Document title="MGS Income and Expense Report" author="Malta Gym Solutions" language="en-GB">
+      <ReportPage report={report} name={name} bookmark="Financial overview">
+        <ReportHeading title="Income & expenses" subtitle="Your financial activity for the selected period, at a glance." />
+        <Metrics items={[
+          { label: "Income", value: summary.incomeExclVat, hint: "Excluding VAT" },
+          { label: "Expenses", value: summary.expensesExclVat, hint: "Excluding VAT" },
+          { label: "VAT payments", value: summary.vatPayments, hint: "Recorded separately from net" },
+        ]} />
+        <ResultPanel label={summary.netExclVat < 0 ? "Net deficit" : summary.netExclVat > 0 ? "Net surplus" : "Net result"} value={summary.netExclVat} note="Income less expenses, excluding VAT." tone={summary.netExclVat < 0 ? "red" : summary.netExclVat > 0 ? "green" : "neutral"} />
+        {summary.excludedExpenseCount > 0 ? <ReportNote>{summary.excludedExpenseCount} excluded expense{summary.excludedExpenseCount === 1 ? "" : "s"}, totalling {money(summary.excludedExpenseAmount)} including VAT. See the appendix after the supplier breakdown.</ReportNote> : null}
+        <SectionHeading title="Expenses by category" />
+        <DataTable columns={summaryColumns} rows={summaryRows(report.expensesByCategory)} compact />
+        <SectionHeading title="Income by invoice status" note="Invoice values grouped by status; these are not cash receipts." />
+        <DataTable columns={summaryColumns} rows={summaryRows(report.incomeByStatus)} compact />
+      </ReportPage>
 
-        <View style={styles.metrics}>
-          <View style={styles.metric}>
-            <Text style={styles.metricLabel}>INCOME EXCL. VAT</Text>
-            <Text style={styles.metricValue}>{money(report.summary.incomeExclVat)}</Text>
-          </View>
-          <View style={styles.metric}>
-            <Text style={styles.metricLabel}>EXPENSES EXCL. VAT</Text>
-            <Text style={styles.metricValue}>{money(report.summary.expensesExclVat)}</Text>
-          </View>
-          <View style={styles.metric}>
-            <Text style={styles.metricLabel}>NET EXCL. VAT</Text>
-            <Text style={styles.metricValue}>{money(report.summary.netExclVat)}</Text>
-          </View>
-          <View style={styles.metric}>
-            <Text style={styles.metricLabel}>VAT PAYMENTS</Text>
-            <Text style={styles.metricValue}>{money(report.summary.vatPayments)}</Text>
-          </View>
-        </View>
+      {report.incomeRows.length > 0 ? <DetailPage report={report} name={name} title="Income detail" note={`${report.incomeRows.length} invoices • Most recent first • Amounts in EUR`} columns={incomeColumns}
+        rows={report.incomeRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.invoiceNumber, row.client, { text: row.status, tone: row.status === "Fully Paid" ? "green" : row.status === "Deposit Paid" ? "amber" : "neutral" }, amount(row.amountExclVat), amount(row.amountInclVat)] }))}
+        total={["Total", "", "", "", amount(summary.incomeExclVat), amount(summary.incomeInclVat)]} emptyLabel="No income records in this period."
+      /> : null}
 
-        {report.summary.excludedExpenseCount > 0 ? (
-          <Text style={styles.note}>
-            {report.summary.excludedExpenseCount} expense record(s), totalling {money(report.summary.excludedExpenseAmount)}, are excluded from calculations and listed in the appendix.
-          </Text>
-        ) : null}
+      {report.expensesBySupplier.length > 0 || report.excludedExpenseRows.length > 0 ? <DetailPage report={report} name={name} title="Expenses by supplier" note={`${report.expensesBySupplier.length} suppliers • Included expenses • Amounts in EUR`} columns={summaryColumns} rows={summaryRows(report.expensesBySupplier)} total={totals}>
+        <ReportNote>VAT payments appear in the inclusive totals. They are recorded separately from expenses excluding VAT and do not reduce the net result.</ReportNote>
+        {report.excludedExpenseRows.length > 0 ? <>
+          <SectionHeading title="Appendix: excluded expenses" note="These records are excluded from this report's calculations and remain included in the VAT report." />
+          <DataTable columns={expenseColumns} rows={expenseRows(report.excludedExpenseRows)} compact />
+        </> : null}
+      </DetailPage> : null}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Expenses by Category</Text>
-          <SummaryTable rows={report.expensesByCategory} />
-        </View>
-
-        <View style={styles.section} break>
-          <Text style={styles.sectionTitle}>Expenses by Supplier</Text>
-          <SummaryTable rows={report.expensesBySupplier} />
-        </View>
-
-        <View style={styles.section} break>
-          <Text style={styles.sectionTitle}>Income by Invoice Status</Text>
-          <SummaryTable rows={report.incomeByStatus} />
-        </View>
-
-        <View style={styles.section} break>
-          <Text style={styles.sectionTitle}>Income Detail</Text>
-          <IncomeTable rows={report.incomeRows} />
-        </View>
-
-        <View style={styles.section} break>
-          <Text style={styles.sectionTitle}>Expense Detail</Text>
-          <ExpenseTable rows={report.expenseRows} emptyLabel="No expense records in this period." />
-        </View>
-
-        {report.excludedExpenseRows.length > 0 ? (
-          <View style={styles.section} break>
-            <Text style={styles.sectionTitle}>Appendix: Expenses Excluded from Calculations</Text>
-            <ExpenseTable rows={report.excludedExpenseRows} emptyLabel="No excluded expenses." />
-          </View>
-        ) : null}
-
-        <Text
-          style={styles.pageNumber}
-          fixed
-          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
-        />
-      </Page>
+      {report.expenseRows.length > 0 ? <DetailPage report={report} name={name} title="Expense detail" note={`${report.expenseRows.length} included records • Most recent first • Amounts in EUR`} columns={expenseColumns} rows={expenseRows(report.expenseRows)} compact
+        total={["Total", "", "", "", amount(summary.expensesExclVat), amount(summary.expensesInclVat)]} emptyLabel="No expense records in this period." /> : null}
     </Document>
   );
 }

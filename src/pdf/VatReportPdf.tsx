@@ -1,155 +1,61 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document } from "@react-pdf/renderer";
 import { formatDisplayDate } from "@/src/lib/format-date";
-import { reportPeriodLabel } from "@/src/lib/financial-report";
-import { type VatRateBreakdownRow, type VatReport } from "@/src/lib/vat-report";
+import type { VatRateBreakdownRow, VatReport } from "@/src/lib/vat-report";
+import { amount, DataTable, DetailPage, Metrics, ReportHeading, ReportNote, ReportPage, ResultPanel, SectionHeading, type Column } from "./FinancialReportLayout";
 
-const styles = StyleSheet.create({
-  page: { paddingTop: 32, paddingHorizontal: 32, paddingBottom: 42, fontFamily: "Helvetica", fontSize: 8, color: "#0f172a" },
-  header: { marginBottom: 16, borderBottomWidth: 2, borderBottomColor: "#0f172a", paddingBottom: 10 },
-  eyebrow: { fontSize: 8, color: "#64748b", letterSpacing: 0.8, marginBottom: 4 },
-  title: { fontSize: 21, fontWeight: 700, marginBottom: 5 },
-  subtitle: { fontSize: 9, color: "#475569" },
-  metrics: { flexDirection: "row", gap: 7 },
-  metric: { flex: 1, borderWidth: 1, borderColor: "#cbd5e1", padding: 8, minHeight: 48 },
-  metricLabel: { fontSize: 7, color: "#64748b", marginBottom: 6 },
-  metricValue: { fontSize: 13, fontWeight: 700 },
-  section: { marginTop: 16 },
-  sectionTitle: { fontSize: 12, fontWeight: 700, marginBottom: 7 },
-  note: { marginTop: 8, padding: 7, backgroundColor: "#f8fafc", color: "#475569", lineHeight: 1.35 },
-  table: { borderWidth: 1, borderColor: "#cbd5e1" },
-  row: { flexDirection: "row", minHeight: 23 },
-  headerRow: { backgroundColor: "#0f172a", color: "#ffffff" },
-  cell: { paddingVertical: 5, paddingHorizontal: 5, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
-  headerCell: { fontWeight: 700, borderBottomWidth: 0 },
-  right: { textAlign: "right" },
-  empty: { padding: 10, color: "#64748b" },
-  pageNumber: { position: "absolute", bottom: 18, left: 32, right: 32, textAlign: "right", color: "#94a3b8" },
-});
-
-function money(value: number) {
-  return `EUR ${Number(value || 0).toFixed(2)}`;
-}
+const rateColumns: Column[] = [
+  { label: "VAT rate", width: 18 }, { label: "Records", width: 14, right: true }, { label: "Taxable", width: 24, right: true },
+  { label: "VAT", width: 20, right: true }, { label: "Incl. VAT", width: 24, right: true },
+];
+const salesColumns: Column[] = [
+  { label: "Date", width: 13 }, { label: "Invoice", width: 16 }, { label: "Client", width: 29 },
+  { label: "Rate", width: 8, right: true }, { label: "Taxable", width: 18, right: true }, { label: "VAT", width: 16, right: true },
+];
+const purchaseColumns: Column[] = [
+  { label: "Date", width: 13 }, { label: "Supplier", width: 25 }, { label: "Category", width: 22 },
+  { label: "Rate", width: 8, right: true }, { label: "Taxable", width: 17, right: true }, { label: "VAT", width: 15, right: true },
+];
 
 function RateTable({ rows }: { rows: VatRateBreakdownRow[] }) {
-  return (
-    <View style={styles.table}>
-      <View style={[styles.row, styles.headerRow]}>
-        <Text style={[styles.cell, styles.headerCell, { width: "18%" }]}>VAT Rate</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "14%" }]}>Records</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "24%" }]}>Taxable</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "20%" }]}>VAT</Text>
-        <Text style={[styles.cell, styles.headerCell, styles.right, { width: "24%" }]}>Incl. VAT</Text>
-      </View>
-      {rows.length === 0 ? <Text style={styles.empty}>No records in this period.</Text> : null}
-      {rows.map((row) => (
-        <View key={row.vatRate} style={styles.row} wrap={false}>
-          <Text style={[styles.cell, { width: "18%" }]}>{row.vatRate}%</Text>
-          <Text style={[styles.cell, styles.right, { width: "14%" }]}>{row.count}</Text>
-          <Text style={[styles.cell, styles.right, { width: "24%" }]}>{money(row.taxableAmount)}</Text>
-          <Text style={[styles.cell, styles.right, { width: "20%" }]}>{money(row.vatAmount)}</Text>
-          <Text style={[styles.cell, styles.right, { width: "24%" }]}>{money(row.amountInclVat)}</Text>
-        </View>
-      ))}
-    </View>
-  );
+  return <DataTable columns={rateColumns} rows={rows.map((row) => ({ key: String(row.vatRate), cells: [`${row.vatRate}%`, row.count, amount(row.taxableAmount), amount(row.vatAmount), amount(row.amountInclVat)] }))} />;
 }
 
 export default function VatReportPdf({ report }: { report: VatReport }) {
-  return (
-    <Document title="MGS VAT Report" author="Malta Gym Solutions">
-      <Page size="A4" style={styles.page}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>MALTA GYM SOLUTIONS</Text>
-          <Text style={styles.title}>VAT Report</Text>
-          <Text style={styles.subtitle}>{reportPeriodLabel(report.period)} | Generated {new Date(report.generatedAt).toLocaleString("en-GB")}</Text>
-        </View>
+  const name = "VAT report";
+  const { summary } = report;
+  const positionLabel = summary.vatPosition > 0 ? "VAT remaining payable" : summary.vatPosition < 0 ? "VAT credit / overpayment" : "VAT position settled";
+  return <Document title="MGS VAT Report" author="Malta Gym Solutions" language="en-GB">
+    <ReportPage report={report} name={name} bookmark="VAT overview">
+      <ReportHeading title="VAT report" subtitle="Sales VAT, purchase VAT and payments, brought together." />
+      <Metrics items={[
+        { label: "Output VAT", value: summary.outputVat, hint: "VAT on sales" },
+        { label: "Input VAT", value: summary.recoverableInputVat, hint: "Recoverable purchase VAT" },
+        { label: "VAT payments", value: summary.vatPayments, hint: "Payments recorded in this period" },
+      ]} />
+      <ResultPanel label={positionLabel} value={summary.vatPosition} note="Output VAT less input VAT and recorded payments." tone={summary.vatPosition > 0 ? "amber" : summary.vatPosition < 0 ? "green" : "neutral"} />
+      <ReportNote>Positive = VAT payable. Negative = credit or overpayment. Expenses hidden from dashboard calculations remain included in this VAT report{summary.dashboardHiddenExpenseCount > 0 ? ` (${summary.dashboardHiddenExpenseCount} records)` : ""}.</ReportNote>
+      <SectionHeading title="Sales by VAT rate" />
+      <RateTable rows={report.salesByVatRate} />
+      <SectionHeading title="Purchases by VAT rate" />
+      <RateTable rows={report.purchasesByVatRate} />
+      <SectionHeading title="VAT reconciliation" />
+      <DataTable columns={[{ label: "Calculation", width: 75 }, { label: "EUR", width: 25, right: true }]} rows={[
+        { key: "before", cells: ["VAT due before payments", amount(summary.vatDueBeforePayments)] },
+        { key: "paid", cells: ["Less: VAT payments", amount(summary.vatPayments)] },
+      ]} total={["VAT position", amount(summary.vatPosition)]} />
+    </ReportPage>
 
-        <View style={styles.metrics}>
-          <View style={styles.metric}><Text style={styles.metricLabel}>OUTPUT VAT</Text><Text style={styles.metricValue}>{money(report.summary.outputVat)}</Text></View>
-          <View style={styles.metric}><Text style={styles.metricLabel}>INPUT VAT</Text><Text style={styles.metricValue}>{money(report.summary.recoverableInputVat)}</Text></View>
-          <View style={styles.metric}><Text style={styles.metricLabel}>VAT PAYMENTS</Text><Text style={styles.metricValue}>{money(report.summary.vatPayments)}</Text></View>
-          <View style={styles.metric}><Text style={styles.metricLabel}>VAT POSITION</Text><Text style={styles.metricValue}>{money(report.summary.vatPosition)}</Text></View>
-        </View>
-        <Text style={styles.note}>
-          Positive VAT position means VAT remains payable. A negative position means a credit or overpayment. Expenses hidden from dashboard calculations remain included in this VAT report.
-        </Text>
+    {report.salesRows.length > 0 || report.paymentRows.length > 0 ? <DetailPage report={report} name={name} title="Sales VAT detail" note={`${report.salesRows.length} invoices • Most recent first • Amounts in EUR`} columns={salesColumns}
+      rows={report.salesRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.invoiceNumber, row.client, `${row.vatRate}%`, amount(row.amountExclVat), amount(row.vatAmount)] }))}
+      total={["Total", "", "", "", amount(summary.taxableSales), amount(summary.outputVat)]} emptyLabel="No sales in this period.">
+      <SectionHeading title="VAT payments" note="Payments deducted when calculating the VAT position." />
+      <DataTable columns={[{ label: "Date", width: 18 }, { label: "Description", width: 57 }, { label: "Amount", width: 25, right: true }]}
+        rows={report.paymentRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.description, amount(row.amountInclVat)] }))}
+        emptyLabel="No VAT payments recorded in this period." />
+    </DetailPage> : null}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Sales by VAT Rate</Text>
-          <RateTable rows={report.salesByVatRate} />
-        </View>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Purchases by VAT Rate</Text>
-          <RateTable rows={report.purchasesByVatRate} />
-        </View>
-
-        <View style={styles.section} break>
-          <Text style={styles.sectionTitle}>Sales VAT Detail</Text>
-          <View style={styles.table}>
-            <View style={[styles.row, styles.headerRow]}>
-              <Text style={[styles.cell, styles.headerCell, { width: "12%" }]}>Date</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: "16%" }]}>Invoice</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: "26%" }]}>Client</Text>
-              <Text style={[styles.cell, styles.headerCell, styles.right, { width: "10%" }]}>Rate</Text>
-              <Text style={[styles.cell, styles.headerCell, styles.right, { width: "18%" }]}>Taxable</Text>
-              <Text style={[styles.cell, styles.headerCell, styles.right, { width: "18%" }]}>VAT</Text>
-            </View>
-            {report.salesRows.length === 0 ? <Text style={styles.empty}>No sales in this period.</Text> : null}
-            {report.salesRows.map((row) => (
-              <View key={row.id} style={styles.row} wrap={false}>
-                <Text style={[styles.cell, { width: "12%" }]}>{formatDisplayDate(row.date)}</Text>
-                <Text style={[styles.cell, { width: "16%" }]}>{row.invoiceNumber}</Text>
-                <Text style={[styles.cell, { width: "26%" }]}>{row.client}</Text>
-                <Text style={[styles.cell, styles.right, { width: "10%" }]}>{row.vatRate}%</Text>
-                <Text style={[styles.cell, styles.right, { width: "18%" }]}>{money(row.amountExclVat)}</Text>
-                <Text style={[styles.cell, styles.right, { width: "18%" }]}>{money(row.vatAmount)}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.section} break>
-          <Text style={styles.sectionTitle}>Purchase VAT Detail</Text>
-          <View style={styles.table}>
-            <View style={[styles.row, styles.headerRow]}>
-              <Text style={[styles.cell, styles.headerCell, { width: "12%" }]}>Date</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: "22%" }]}>Supplier</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: "26%" }]}>Category</Text>
-              <Text style={[styles.cell, styles.headerCell, styles.right, { width: "10%" }]}>Rate</Text>
-              <Text style={[styles.cell, styles.headerCell, styles.right, { width: "15%" }]}>Taxable</Text>
-              <Text style={[styles.cell, styles.headerCell, styles.right, { width: "15%" }]}>VAT</Text>
-            </View>
-            {report.purchaseRows.length === 0 ? <Text style={styles.empty}>No purchases in this period.</Text> : null}
-            {report.purchaseRows.map((row) => (
-              <View key={row.id} style={styles.row} wrap={false}>
-                <Text style={[styles.cell, { width: "12%" }]}>{formatDisplayDate(row.date)}</Text>
-                <Text style={[styles.cell, { width: "22%" }]}>{row.supplier}</Text>
-                <Text style={[styles.cell, { width: "26%" }]}>{row.category}</Text>
-                <Text style={[styles.cell, styles.right, { width: "10%" }]}>{row.vatRate}%</Text>
-                <Text style={[styles.cell, styles.right, { width: "15%" }]}>{money(row.amountExclVat)}</Text>
-                <Text style={[styles.cell, styles.right, { width: "15%" }]}>{money(row.vatAmount)}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {report.paymentRows.length > 0 ? (
-          <View style={styles.section} break>
-            <Text style={styles.sectionTitle}>VAT Payments</Text>
-            <View style={styles.table}>
-              {report.paymentRows.map((row) => (
-                <View key={row.id} style={styles.row} wrap={false}>
-                  <Text style={[styles.cell, { width: "18%" }]}>{formatDisplayDate(row.date)}</Text>
-                  <Text style={[styles.cell, { width: "52%" }]}>{row.description}</Text>
-                  <Text style={[styles.cell, styles.right, { width: "30%" }]}>{money(row.amountInclVat)}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-        <Text style={styles.pageNumber} fixed render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
-      </Page>
-    </Document>
-  );
+    {report.purchaseRows.length > 0 ? <DetailPage report={report} name={name} title="Purchase VAT detail" note={`${report.purchaseRows.length} purchases • Includes expenses hidden from the dashboard • Amounts in EUR`} columns={purchaseColumns}
+      rows={report.purchaseRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.supplier, row.category, `${row.vatRate}%`, amount(row.amountExclVat), amount(row.vatAmount)] }))}
+      total={["Total", "", "", "", amount(summary.taxablePurchases), amount(summary.recoverableInputVat)]} compact emptyLabel="No purchases in this period." /> : null}
+  </Document>;
 }
