@@ -152,9 +152,14 @@ export default function PaymentReceiptsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const invoiceId = new URLSearchParams(window.location.search).get("invoiceId");
+      const params = new URLSearchParams(window.location.search);
+      const invoiceId = params.get("invoiceId");
+      const requestedType = params.get("receiptType");
       if (invoiceId) {
         setSelectedInvoiceId(invoiceId);
+        if (requestedType === "deposit" || requestedType === "balance") {
+          setReceiptType(requestedType);
+        }
       }
     }, 0);
 

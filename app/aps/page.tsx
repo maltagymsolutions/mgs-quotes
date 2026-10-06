@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppPage } from "@/src/components/app-page";
 import { buildCsv, downloadCsv } from "@/src/lib/csv";
 import { formatDisplayDate } from "@/src/lib/format-date";
-import { DEFAULT_OWNER, Owner, OWNERS, resolveBankAccount } from "@/src/lib/owners";
+import { DEFAULT_OWNER, isOwner, Owner, OWNERS, resolveBankAccount } from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Client = {
@@ -62,6 +62,7 @@ type ApsTransaction = {
   category: string;
   amount: number;
   balance: number;
+  editHref?: string;
 };
 
 function money(value: number) {
@@ -109,6 +110,11 @@ export default function ApsPage() {
   const [transferOwner, setTransferOwner] = useState<Owner>(DEFAULT_OWNER);
   const [transferAmount, setTransferAmount] = useState("");
   const [transferDescription, setTransferDescription] = useState("");
+  const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
+  const [savingTransfer, setSavingTransfer] = useState(false);
+  const [transferFeedback, setTransferFeedback] = useState<{ text: string; error: boolean } | null>(null);
+  const transferEditorRef = useRef<HTMLFormElement>(null);
+  const transferSavePending = useRef(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
@@ -179,6 +185,7 @@ export default function ApsPage() {
           description: receipt.receipt_type,
           category: "Receipt",
           amount: Number(receipt.amount_paid || 0),
+          editHref: `/receipts?invoiceId=${encodeURIComponent(receipt.invoice_id)}&receiptType=${encodeURIComponent(receipt.receipt_type)}#receipt-editor`,
         });
       });
 
@@ -195,6 +202,7 @@ export default function ApsPage() {
           description: expense.description,
           category: expense.category,
           amount: -Number(expense.amount_incl_vat || 0),
+          editHref: `/expenses?expenseId=${encodeURIComponent(expense.id)}#expense-editor`,
         });
       });
 
@@ -320,11 +328,48 @@ export default function ApsPage() {
     setMessage(`Exported ${filteredTransactions.length} APS transaction(s).`);
   }
 
-  async function saveTransfer() {
-    const amount = Number(transferAmount || 0);
+  function resetTransferEditor() {
+    setEditingTransferId(null);
+    setTransferDate(todayIsoDate());
+    setTransferDirection("aps-to-owner");
+    setTransferOwner(DEFAULT_OWNER);
+    setTransferAmount("");
+    setTransferDescription("");
+  }
 
-    if (amount <= 0) {
-      setMessage("Transfer amount must be greater than zero.");
+  function startEditingTransfer(id: string) {
+    if (transferSavePending.current) return;
+    const transfer = transfers.find((row) => row.id === id);
+    if (!transfer) return;
+    const owner = transfer.from_account === "APS" ? transfer.to_account : transfer.from_account;
+    if (!isOwner(owner)) {
+      setMessage("This transfer's owner could not be identified.");
+      return;
+    }
+
+    setEditingTransferId(transfer.id);
+    setTransferDate(transfer.transfer_date);
+    setTransferDirection(transfer.from_account === "APS" ? "aps-to-owner" : "owner-to-aps");
+    setTransferOwner(owner);
+    setTransferAmount(String(transfer.amount));
+    // Regenerate automatic descriptions if the user reverses the direction.
+    setTransferDescription(["Transfer to owner", "Transfer from owner"].includes(transfer.description) ? "" : transfer.description);
+    setTransferFeedback(null);
+    transferEditorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("transfer-amount")?.focus({ preventScroll: true });
+  }
+
+  async function saveTransfer() {
+    if (transferSavePending.current) return;
+    const amount = Number(transferAmount);
+
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 9999999999.99 || amount !== round2(amount)) {
+      setTransferFeedback({ text: "Enter an amount greater than zero, with no more than two decimal places (maximum €9,999,999,999.99).", error: true });
+      return;
+    }
+
+    if (!transferDate || !isOwner(transferOwner)) {
+      setTransferFeedback({ text: "Choose a transfer date and owner.", error: true });
       return;
     }
 
@@ -338,19 +383,41 @@ export default function ApsPage() {
         (transferDirection === "aps-to-owner" ? "Transfer to owner" : "Transfer from owner"),
     };
 
-    setMessage("Saving transfer...");
+    transferSavePending.current = true;
+    setSavingTransfer(true);
+    setTransferFeedback(null);
 
-    const { error } = await supabase.from("account_transfers").insert(payload);
+    try {
+      const query = editingTransferId
+        ? supabase.from("account_transfers").update(payload).eq("id", editingTransferId)
+        : supabase.from("account_transfers").insert(payload);
+      // Require the saved row back so a missing/deleted transfer is not reported as updated.
+      const { data, error } = await query.select("*").single();
 
-    if (error) {
-      setMessage(error.code === "PGRST205" || error.code === "42P01" ? TRANSFERS_SETUP_MESSAGE : error.message);
-      return;
+      if (error || !data) {
+        setTransferFeedback({
+          text: error?.code === "PGRST205" || error?.code === "42P01"
+            ? TRANSFERS_SETUP_MESSAGE
+            : error?.code === "PGRST116" || !error
+              ? "This transfer could not be saved. Refresh the page and try again."
+              : error.message,
+          error: true,
+        });
+        return;
+      }
+
+      const savedTransfer = data as AccountTransfer;
+      setTransfers((current) => editingTransferId
+        ? current.map((row) => row.id === editingTransferId ? savedTransfer : row)
+        : [...current, savedTransfer]);
+      resetTransferEditor();
+      setTransferFeedback({ text: editingTransferId ? "Transfer updated. The APS balance has been recalculated." : "Transfer saved.", error: false });
+    } catch {
+      setTransferFeedback({ text: "Unable to save the transfer. Please check your connection and try again.", error: true });
+    } finally {
+      transferSavePending.current = false;
+      setSavingTransfer(false);
     }
-
-    setTransferAmount("");
-    setTransferDescription("");
-    await loadData();
-    setMessage("Transfer saved.");
   }
 
   return (
@@ -375,18 +442,19 @@ export default function ApsPage() {
         <SummaryCard label="Filtered net" value={money(summary.filteredNet)} />
       </div>
 
-      <section className="mb-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <form ref={transferEditorRef} onSubmit={(event) => { event.preventDefault(); void saveTransfer(); }} className="mb-5 scroll-mt-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="mb-4">
-          <h2 className="m-0 text-lg font-bold text-slate-950">Transfer Money</h2>
-          <p className="mt-1 text-sm text-slate-500">Record money moving between APS and an owner account.</p>
+          <h2 className="m-0 text-lg font-bold text-slate-950">{editingTransferId ? "Edit Transfer" : "Transfer Money"}</h2>
+          <p className="mt-1 text-sm text-slate-500">{editingTransferId ? "Correct the amount or direction of this existing transfer, then save your changes." : "Record money moving between APS and an owner account."}</p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <fieldset disabled={savingTransfer} className="m-0 grid min-w-0 gap-3 border-0 p-0 sm:grid-cols-2 lg:grid-cols-5">
           <div>
             <label htmlFor="transfer-date">Date</label>
             <input
               id="transfer-date"
               type="date"
+              required
               className="mt-1 w-full px-3 py-2"
               value={transferDate}
               onChange={(event) => setTransferDate(event.target.value)}
@@ -402,8 +470,8 @@ export default function ApsPage() {
                 setTransferDirection(event.target.value as "aps-to-owner" | "owner-to-aps")
               }
             >
-              <option value="aps-to-owner">APS to owner</option>
-              <option value="owner-to-aps">Owner to APS</option>
+              <option value="aps-to-owner">APS to owner (money out)</option>
+              <option value="owner-to-aps">Owner to APS (money in)</option>
             </select>
           </div>
           <div>
@@ -422,24 +490,27 @@ export default function ApsPage() {
             </select>
           </div>
           <div>
-            <label htmlFor="transfer-amount">Amount</label>
+            <label htmlFor="transfer-amount">Amount (€)</label>
             <input
               id="transfer-amount"
               type="number"
-              min="0"
+              min="0.01"
+              max="9999999999.99"
               step="0.01"
+              required
               className="mt-1 w-full px-3 py-2"
               value={transferAmount}
               onChange={(event) => setTransferAmount(event.target.value)}
             />
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
             <button
-              onClick={saveTransfer}
-              className="inline-flex h-10 w-full items-center justify-center !rounded-md !border-slate-900 !bg-slate-900 px-3 text-sm font-bold !text-white"
+              type="submit"
+              className="inline-flex h-10 flex-1 items-center justify-center !rounded-md !border-slate-900 !bg-slate-900 px-3 text-sm font-bold !text-white disabled:opacity-60"
             >
-              Save Transfer
+              {savingTransfer ? "Saving..." : editingTransferId ? "Save Changes" : "Save Transfer"}
             </button>
+            {editingTransferId ? <button type="button" onClick={() => { resetTransferEditor(); setTransferFeedback(null); }} className="h-10 !rounded-md px-3 text-sm font-bold">Cancel</button> : null}
           </div>
           <div className="sm:col-span-2 lg:col-span-5">
             <label htmlFor="transfer-description">Description</label>
@@ -451,8 +522,12 @@ export default function ApsPage() {
               onChange={(event) => setTransferDescription(event.target.value)}
             />
           </div>
-        </div>
-      </section>
+        </fieldset>
+        <p className={`mb-0 mt-3 text-sm font-semibold ${transferDirection === "owner-to-aps" ? "text-emerald-700" : "text-slate-600"}`}>
+          {transferDirection === "owner-to-aps" ? `${transferOwner} → APS: money into APS.` : `APS → ${transferOwner}: money out of APS.`}
+        </p>
+        {transferFeedback ? <p role={transferFeedback.error ? "alert" : "status"} className={`mb-0 mt-3 rounded-md p-3 text-sm font-semibold ${transferFeedback.error ? "bg-red-50 text-red-800" : "bg-emerald-50 text-emerald-800"}`}>{transferFeedback.text}</p> : null}
+      </form>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -544,7 +619,7 @@ export default function ApsPage() {
             <table className="w-full min-w-[920px] border-collapse bg-white">
               <thead>
                 <tr>
-                  {["Date", "Type", "Counterparty", "Reference", "Description", "Category", "Amount", "Balance"].map(
+                  {["Date", "Type", "Counterparty", "Reference", "Description", "Category", "Amount", "Balance", "Actions"].map(
                     (heading) => (
                       <th
                         key={heading}
@@ -572,6 +647,13 @@ export default function ApsPage() {
                     </td>
                     <td className="border-b border-slate-100 px-3 py-3 text-right font-extrabold tabular-nums">
                       {money(transaction.balance)}
+                    </td>
+                    <td className="border-b border-slate-100 px-3 py-3">
+                      {transaction.type === "Transfer" ? (
+                        <button type="button" disabled={savingTransfer} onClick={() => startEditingTransfer(transaction.reference)} aria-label={`Edit transfer with ${transaction.counterparty} on ${formatDisplayDate(transaction.date)}`} className="!rounded-md px-3 py-1.5 text-sm font-bold disabled:opacity-60">Edit</button>
+                      ) : transaction.editHref ? (
+                        <Link href={transaction.editHref} className="whitespace-nowrap text-sm font-bold">{transaction.type === "Income" ? "Edit receipt" : "Edit expense"}</Link>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppPage } from "@/src/components/app-page";
 import { buildCsv, downloadCsv } from "@/src/lib/csv";
 import { formatDatabaseError } from "@/src/lib/database-errors";
@@ -96,6 +96,7 @@ export default function ExpensesPage() {
   const [message, setMessage] = useState("");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const initializedFromLink = useRef(false);
 
   const [expenseDate, setExpenseDate] = useState(todayDate());
   const [supplier, setSupplier] = useState("");
@@ -116,6 +117,25 @@ export default function ExpensesPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  const startEditing = useCallback((expense: Expense) => {
+    const account = resolveBankAccount(expense.bank_account);
+    const owner = resolveOwner(expense.paid_by_owner);
+
+    setEditingExpenseId(expense.id);
+    setExpenseDate(expense.expense_date);
+    setSupplier(expense.supplier || "");
+    setDescription(expense.description || "");
+    setCategory(expense.category);
+    setVatRate(Number(expense.vat_rate));
+    setAmountInclVat(String(expense.amount_incl_vat ?? ""));
+    setBankAccount(account);
+    setPaidByOwner(owner);
+    setSplitOwners(resolveOwnerSplit(expense.split_owners, owner));
+    setHiddenFromDashboard(Boolean(expense.hidden_from_dashboard));
+    setMessage(`Editing expense: ${expense.description}`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
   const loadExpenses = useCallback(async function loadExpenses() {
     const { data, error } = await supabase
       .from("expenses")
@@ -129,7 +149,16 @@ export default function ExpensesPage() {
     }
 
     setExpenses(data || []);
-  }, [supabase]);
+    if (!initializedFromLink.current) {
+      initializedFromLink.current = true;
+      const expenseId = new URLSearchParams(window.location.search).get("expenseId");
+      if (expenseId) {
+        const expense = (data as Expense[] | null)?.find((row) => row.id === expenseId);
+        if (expense) startEditing(expense);
+        else setMessage("The requested expense could not be found.");
+      }
+    }
+  }, [supabase, startEditing]);
 
   useEffect(() => {
     async function loadUser() {
@@ -183,24 +212,6 @@ export default function ExpensesPage() {
     setHiddenFromDashboard(false);
   }
 
-  function startEditing(expense: Expense) {
-    const account = resolveBankAccount(expense.bank_account);
-    const owner = resolveOwner(expense.paid_by_owner);
-
-    setEditingExpenseId(expense.id);
-    setExpenseDate(expense.expense_date);
-    setSupplier(expense.supplier || "");
-    setDescription(expense.description || "");
-    setCategory(expense.category);
-    setVatRate(Number(expense.vat_rate));
-    setAmountInclVat(String(expense.amount_incl_vat ?? ""));
-    setBankAccount(account);
-    setPaidByOwner(owner);
-    setSplitOwners(resolveOwnerSplit(expense.split_owners, owner));
-    setHiddenFromDashboard(Boolean(expense.hidden_from_dashboard));
-    setMessage(`Editing expense: ${expense.description}`);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
 
   function updateBankAccount(account: BankAccount) {
     setBankAccount(account);
@@ -490,7 +501,7 @@ export default function ExpensesPage() {
       }
     >
 
-      <section style={{ padding: 20, borderRadius: 16, marginBottom: 24 }}>
+      <section id="expense-editor" style={{ padding: 20, borderRadius: 16, marginBottom: 24 }}>
         <h2>{editingExpenseId ? "Edit Expense" : "Add Expense"}</h2>
 
         <div style={{ display: "grid", gap: 14 }}>
