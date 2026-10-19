@@ -19,5 +19,11 @@ export function formatDatabaseError(error: DatabaseError, setupMessage?: string)
     return APS_BANK_ACCOUNT_MIGRATION_MESSAGE;
   }
 
+  if ((error.code === "42703" || error.code === "PGRST204") && error.message.includes("vat_period")) {
+    return "VAT period setup is required. Apply database migration 022, then refresh and try again.";
+  }
+  if (error.code === "23514" && error.message.includes("expenses_vat_period_check")) {
+    return "Enter both VAT period dates, with the start on or before the end. Only VAT payments can have a VAT period.";
+  }
   return error.message;
 }

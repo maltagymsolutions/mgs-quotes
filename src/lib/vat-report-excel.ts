@@ -140,6 +140,23 @@ function addPurchaseDetail(
   sheet.autoFilter = { from: "A3", to: `I${Math.max(sheet.rowCount, 3)}` };
 }
 
+function addPaymentDetail(workbook: ExcelJS.Workbook, name: string, subtitle: string, rows: ReportExpenseRow[]) {
+  const sheet = workbook.addWorksheet(name);
+  configureSheet(sheet, [16, 16, 16, 24, 36, 16, 18]);
+  styleTitle(sheet, name, subtitle, 7);
+  sheet.addRow(["Payment Date", "VAT Period From", "VAT Period To", "Paid To", "Description", "Paid From", "Amount"]);
+  styleHeader(sheet.getRow(3));
+  rows.forEach((row) => sheet.addRow([
+    new Date(`${row.date}T00:00:00Z`),
+    row.vatPeriodStart ? new Date(`${row.vatPeriodStart}T00:00:00Z`) : "Unassigned",
+    row.vatPeriodEnd ? new Date(`${row.vatPeriodEnd}T00:00:00Z`) : "Unassigned",
+    row.supplier, row.description, row.paidFrom, row.amountInclVat,
+  ]));
+  [1, 2, 3].forEach((column) => { sheet.getColumn(column).numFmt = "dd/mm/yyyy"; });
+  styleBody(sheet, 4, sheet.rowCount, [7]);
+  sheet.autoFilter = { from: "A3", to: `G${Math.max(sheet.rowCount, 3)}` };
+}
+
 export async function buildVatReportWorkbook(report: VatReport) {
   const workbook = new ExcelJS.Workbook();
   const period = reportPeriodLabel(report.period);
@@ -160,7 +177,7 @@ export async function buildVatReportWorkbook(report: VatReport) {
   summary.addRow(["Taxable purchases", report.summary.taxablePurchases]);
   summary.addRow(["Recoverable input VAT", report.summary.recoverableInputVat]);
   summary.addRow(["VAT due before payments", { formula: "B5-B7", result: report.summary.vatDueBeforePayments }]);
-  summary.addRow(["VAT payments", report.summary.vatPayments]);
+  summary.addRow(["Payments for this VAT period", report.summary.vatPayments]);
   summary.addRow(["VAT position after payments", { formula: "B8-B9", result: report.summary.vatPosition }]);
   styleBody(summary, 4, 10, [2]);
   summary.getRow(10).font = {
@@ -172,12 +189,28 @@ export async function buildVatReportWorkbook(report: VatReport) {
   summary.mergeCells(12, 1, 12, 2);
   summary.getCell("A12").font = { italic: true, color: { argb: "FF64748B" } };
 
+  summary.addRow(["Payments are deducted by their assigned VAT period, regardless of payment date."]);
+  summary.mergeCells(13, 1, 13, 2);
+  summary.addRow([`${report.unassignedPaymentRows.length} payment(s) have no period; ${report.partialPeriodPaymentRows.length} payment(s) only partly overlap the selected dates. These are not deducted. See the review sheets.`]);
+  summary.mergeCells(14, 1, 14, 2);
+  for (const row of [12, 13, 14]) {
+    summary.getCell(row, 1).alignment = { wrapText: true, vertical: "top" };
+    summary.getRow(row).height = row === 14 ? 60 : 45;
+  }
+
   addRateSheet(workbook, "Sales by VAT Rate", "Sales by VAT Rate", subtitle, report.salesByVatRate);
   addRateSheet(workbook, "Purchases by VAT Rate", "Purchases by VAT Rate", subtitle, report.purchasesByVatRate);
   addSalesDetail(workbook, subtitle, report.salesRows);
   addPurchaseDetail(workbook, "Purchase Detail", "Purchase VAT Detail", subtitle, report.purchaseRows);
   if (report.paymentRows.length > 0) {
-    addPurchaseDetail(workbook, "VAT Payments", "VAT Payment Detail", subtitle, report.paymentRows);
+    addPaymentDetail(workbook, "VAT Payments", subtitle, report.paymentRows);
+  }
+
+  if (report.unassignedPaymentRows.length > 0) {
+    addPaymentDetail(workbook, "Unassigned Payments", "NOT DEDUCTED — Assign a VAT period in Expenses.", report.unassignedPaymentRows);
+  }
+  if (report.partialPeriodPaymentRows.length > 0) {
+    addPaymentDetail(workbook, "Partial Period Payments", "NOT DEDUCTED — Select the full VAT period to include these payments.", report.partialPeriodPaymentRows);
   }
 
   const buffer = await workbook.xlsx.writeBuffer();

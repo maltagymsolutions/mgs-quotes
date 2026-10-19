@@ -33,6 +33,8 @@ export type ReportExpenseRow = {
   description: string;
   category: string;
   paidFrom: string;
+  vatPeriodStart?: string | null;
+  vatPeriodEnd?: string | null;
   vatRate: number;
   amountExclVat: number;
   vatAmount: number;
@@ -101,6 +103,8 @@ export type FinancialReportSource = {
     amount_incl_vat: number | string;
     bank_account?: string | null;
     hidden_from_dashboard?: boolean | null;
+    vat_period_start?: string | null;
+    vat_period_end?: string | null;
   }[];
 };
 
@@ -144,7 +148,7 @@ function sortBreakdown(rows: ReportBreakdownRow[]) {
   );
 }
 
-function buildExpenseRow(
+export function buildExpenseRow(
   expense: FinancialReportSource["expenses"][number]
 ): ReportExpenseRow {
   const amountInclVat = Number(expense.amount_incl_vat || 0);
@@ -161,6 +165,8 @@ function buildExpenseRow(
     description: expense.description,
     category: expense.category,
     paidFrom: resolveBankAccount(expense.bank_account),
+    vatPeriodStart: expense.vat_period_start || null,
+    vatPeriodEnd: expense.vat_period_end || null,
     vatRate,
     amountExclVat: calculated.amountExclVat,
     vatAmount: calculated.vatAmount,

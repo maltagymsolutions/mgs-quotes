@@ -5,6 +5,8 @@ import {
   type ReportPeriod,
 } from "@/src/lib/financial-report";
 
+import { vatPaymentPeriodStatus } from "@/src/lib/vat-period";
+
 export type VatRateBreakdownRow = {
   vatRate: number;
   count: number;
@@ -33,6 +35,8 @@ export type VatReport = {
   salesRows: ReportIncomeRow[];
   purchaseRows: ReportExpenseRow[];
   paymentRows: ReportExpenseRow[];
+  unassignedPaymentRows: ReportExpenseRow[];
+  partialPeriodPaymentRows: ReportExpenseRow[];
 };
 
 function round2(value: number) {
@@ -64,7 +68,7 @@ function buildRateBreakdown<T extends { vatRate: number; amountExclVat: number; 
   return Array.from(totals.values()).sort((a, b) => b.vatRate - a.vatRate);
 }
 
-export function buildVatReport(report: IncomeExpenseReport): VatReport {
+export function buildVatReport(report: IncomeExpenseReport, payments: ReportExpenseRow[]): VatReport {
   const vatExpenseRows = [
     ...report.expenseRows,
     ...report.excludedExpenseRows,
@@ -72,7 +76,13 @@ export function buildVatReport(report: IncomeExpenseReport): VatReport {
     (a, b) => b.date.localeCompare(a.date) || a.supplier.localeCompare(b.supplier)
   );
   const purchaseRows = vatExpenseRows.filter((row) => row.category !== "VAT");
-  const paymentRows = vatExpenseRows.filter((row) => row.category === "VAT");
+  const candidates = payments.filter((row) => row.category === "VAT")
+    .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  const status = (row: ReportExpenseRow) => vatPaymentPeriodStatus(row.vatPeriodStart, row.vatPeriodEnd, report.period);
+  const paymentRows = candidates.filter((row) => status(row) === "included");
+  // Unassigned payments could belong to any period, regardless of payment date.
+  const unassignedPaymentRows = candidates.filter((row) => status(row) === "unassigned");
+  const partialPeriodPaymentRows = candidates.filter((row) => status(row) === "partial");
   const taxablePurchases = round2(
     purchaseRows.reduce((sum, row) => sum + row.amountExclVat, 0)
   );
@@ -102,12 +112,14 @@ export function buildVatReport(report: IncomeExpenseReport): VatReport {
       vatPayments,
       vatDueBeforePayments,
       vatPosition: round2(vatDueBeforePayments - vatPayments),
-      dashboardHiddenExpenseCount: report.excludedExpenseRows.length,
+      dashboardHiddenExpenseCount: report.excludedExpenseRows.filter((row) => row.category !== "VAT").length,
     },
     salesByVatRate: buildRateBreakdown(report.incomeRows),
     purchasesByVatRate: buildRateBreakdown(purchaseRows),
     salesRows: report.incomeRows,
     purchaseRows,
     paymentRows,
+    unassignedPaymentRows,
+    partialPeriodPaymentRows,
   };
 }

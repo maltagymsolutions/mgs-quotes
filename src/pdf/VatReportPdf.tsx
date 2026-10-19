@@ -1,3 +1,4 @@
+import { vatPeriodLabel } from "@/src/lib/vat-period";
 import { Document } from "@react-pdf/renderer";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import type { VatRateBreakdownRow, VatReport } from "@/src/lib/vat-report";
@@ -23,6 +24,7 @@ function RateTable({ rows }: { rows: VatRateBreakdownRow[] }) {
 export default function VatReportPdf({ report }: { report: VatReport }) {
   const name = "VAT report";
   const { summary } = report;
+  const omittedPayments = [...report.unassignedPaymentRows, ...report.partialPeriodPaymentRows];
   const positionLabel = summary.vatPosition > 0 ? "VAT remaining payable" : summary.vatPosition < 0 ? "VAT credit / overpayment" : "VAT position settled";
   return <Document title="MGS VAT Report" author="Malta Gym Solutions" language="en-GB">
     <ReportPage report={report} name={name} bookmark="VAT overview">
@@ -30,10 +32,11 @@ export default function VatReportPdf({ report }: { report: VatReport }) {
       <Metrics items={[
         { label: "Output VAT", value: summary.outputVat, hint: "VAT on sales" },
         { label: "Input VAT", value: summary.recoverableInputVat, hint: "Recoverable purchase VAT" },
-        { label: "VAT payments", value: summary.vatPayments, hint: "Payments recorded in this period" },
+        { label: "VAT payments", value: summary.vatPayments, hint: "Payments for this VAT period" },
       ]} />
-      <ResultPanel label={positionLabel} value={summary.vatPosition} note="Output VAT less input VAT and recorded payments." tone={summary.vatPosition > 0 ? "amber" : summary.vatPosition < 0 ? "green" : "neutral"} />
+      <ResultPanel label={positionLabel} value={summary.vatPosition} note="Payments are deducted by VAT period, regardless of payment date." tone={summary.vatPosition > 0 ? "amber" : summary.vatPosition < 0 ? "green" : "neutral"} />
       <ReportNote>Positive = VAT payable. Negative = credit or overpayment. Expenses hidden from dashboard calculations remain included in this VAT report{summary.dashboardHiddenExpenseCount > 0 ? ` (${summary.dashboardHiddenExpenseCount} records)` : ""}.</ReportNote>
+      {omittedPayments.length > 0 ? <ReportNote>{report.unassignedPaymentRows.length} payment(s) need a VAT period; {report.partialPeriodPaymentRows.length} payment(s) only partly overlap these report dates. These payments are not deducted. See payment review below.</ReportNote> : null}
       <SectionHeading title="Sales by VAT rate" />
       <RateTable rows={report.salesByVatRate} />
       <SectionHeading title="Purchases by VAT rate" />
@@ -45,13 +48,18 @@ export default function VatReportPdf({ report }: { report: VatReport }) {
       ]} total={["VAT position", amount(summary.vatPosition)]} />
     </ReportPage>
 
-    {report.salesRows.length > 0 || report.paymentRows.length > 0 ? <DetailPage report={report} name={name} title="Sales VAT detail" note={`${report.salesRows.length} invoices • Most recent first • Amounts in EUR`} columns={salesColumns}
+    {report.salesRows.length > 0 || report.paymentRows.length > 0 || omittedPayments.length > 0 ? <DetailPage report={report} name={name} title="Sales VAT detail" note={`${report.salesRows.length} invoices • Most recent first • Amounts in EUR`} columns={salesColumns}
       rows={report.salesRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.invoiceNumber, row.client, `${row.vatRate}%`, amount(row.amountExclVat), amount(row.vatAmount)] }))}
       total={["Total", "", "", "", amount(summary.taxableSales), amount(summary.outputVat)]} emptyLabel="No sales in this period.">
       <SectionHeading title="VAT payments" note="Payments deducted when calculating the VAT position." />
-      <DataTable columns={[{ label: "Date", width: 18 }, { label: "Description", width: 57 }, { label: "Amount", width: 25, right: true }]}
-        rows={report.paymentRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.description, amount(row.amountInclVat)] }))}
-        emptyLabel="No VAT payments recorded in this period." />
+      <DataTable columns={[{ label: "Payment date", width: 18 }, { label: "VAT period", width: 28 }, { label: "Description", width: 36 }, { label: "Amount", width: 18, right: true }]}
+        rows={report.paymentRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), vatPeriodLabel(row.vatPeriodStart, row.vatPeriodEnd), row.description, amount(row.amountInclVat)] }))}
+        emptyLabel="No payments assigned to this VAT period." />
+      {omittedPayments.length > 0 ? <>
+        <SectionHeading title="Payment review — not deducted" note="Assign missing periods in Expenses. For partial overlaps, select the full VAT period." />
+        <DataTable columns={[{ label: "Payment date", width: 18 }, { label: "VAT period", width: 28 }, { label: "Description", width: 36 }, { label: "Amount", width: 18, right: true }]}
+          rows={omittedPayments.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), vatPeriodLabel(row.vatPeriodStart, row.vatPeriodEnd), row.description, amount(row.amountInclVat)] }))} />
+      </> : null}
     </DetailPage> : null}
 
     {report.purchaseRows.length > 0 ? <DetailPage report={report} name={name} title="Purchase VAT detail" note={`${report.purchaseRows.length} purchases • Includes expenses hidden from the dashboard • Amounts in EUR`} columns={purchaseColumns}

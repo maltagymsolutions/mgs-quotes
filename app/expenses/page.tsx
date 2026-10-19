@@ -17,6 +17,7 @@ import {
   resolveOwnerSplit,
 } from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
+import { isValidVatPeriod, vatPeriodLabel } from "@/src/lib/vat-period";
 
 type UserInfo = {
   email?: string;
@@ -26,6 +27,8 @@ type Expense = {
   id: string;
   created_at: string;
   expense_date: string;
+  vat_period_start?: string | null;
+  vat_period_end?: string | null;
   supplier: string | null;
   description: string;
   category: ExpenseCategory;
@@ -105,6 +108,8 @@ export default function ExpensesPage() {
   const initializedFromLink = useRef(false);
 
   const [expenseDate, setExpenseDate] = useState(todayDate());
+  const [vatPeriodStart, setVatPeriodStart] = useState("");
+  const [vatPeriodEnd, setVatPeriodEnd] = useState("");
   const [supplier, setSupplier] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>("Equipment");
@@ -129,6 +134,8 @@ export default function ExpensesPage() {
 
     setEditingExpenseId(expense.id);
     setExpenseDate(expense.expense_date);
+    setVatPeriodStart(expense.vat_period_start || "");
+    setVatPeriodEnd(expense.vat_period_end || "");
     setSupplier(expense.supplier || "");
     setDescription(expense.description || "");
     setCategory(expense.category);
@@ -207,6 +214,8 @@ export default function ExpensesPage() {
   function clearForm() {
     setEditingExpenseId(null);
     setExpenseDate(todayDate());
+    setVatPeriodStart("");
+    setVatPeriodEnd("");
     setSupplier("");
     setDescription("");
     setCategory("Equipment");
@@ -260,6 +269,11 @@ export default function ExpensesPage() {
       return;
     }
 
+    if (category === "VAT" && !isValidVatPeriod(vatPeriodStart, vatPeriodEnd)) {
+      setMessage("Choose the VAT period this payment settles, with a start date on or before the end date.");
+      return;
+    }
+
     setMessage(editingExpenseId ? "Updating expense..." : "Saving expense...");
 
     const normalizedPaidByOwner = isOwner(bankAccount) ? paidByOwner : DEFAULT_OWNER;
@@ -270,6 +284,8 @@ export default function ExpensesPage() {
 
     const payload = {
       expense_date: expenseDate,
+      vat_period_start: category === "VAT" ? vatPeriodStart : null,
+      vat_period_end: category === "VAT" ? vatPeriodEnd : null,
       supplier: supplier || null,
       description,
       category,
@@ -452,6 +468,8 @@ export default function ExpensesPage() {
       "Supplier",
       "Description",
       "Category",
+      "VAT Period From",
+      "VAT Period To",
       "Paid From",
       "Direct Owner",
       "Split Between",
@@ -477,6 +495,8 @@ export default function ExpensesPage() {
         "Supplier": expense.supplier || "",
         "Description": expense.description,
         "Category": expense.category,
+        "VAT Period From": expense.vat_period_start || "",
+        "VAT Period To": expense.vat_period_end || "",
         "Paid From": account,
         "Direct Owner": isOwner(account) ? paidBy : "",
         "Split Between": isOwner(account) ? splitBetween.join("; ") : "",
@@ -519,7 +539,7 @@ export default function ExpensesPage() {
             }}
           >
             <div>
-              <label>Date</label>
+              <label>{category === "VAT" ? "Payment date" : "Date"}</label>
               <input
                 type="date"
                 style={{ width: "100%", padding: 12, marginTop: 6 }}
@@ -537,6 +557,25 @@ export default function ExpensesPage() {
               />
             </div>
           </div>
+
+          {category === "VAT" ? (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <h3 className="mt-0 text-base font-bold">VAT period being paid</h3>
+              <p className="text-sm text-slate-600">Choose the period this payment settles. For example, a Q2 payment made in July belongs to 1 April–30 June. Keep the payment date above as the date the money left the account.</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="vat-period-start">VAT period from</label>
+                  <input id="vat-period-start" type="date" required value={vatPeriodStart} max={vatPeriodEnd || undefined}
+                    onChange={(e) => setVatPeriodStart(e.target.value)} style={{ width: "100%", padding: 12, marginTop: 6 }} />
+                </div>
+                <div>
+                  <label htmlFor="vat-period-end">VAT period to</label>
+                  <input id="vat-period-end" type="date" required value={vatPeriodEnd} min={vatPeriodStart || undefined}
+                    onChange={(e) => setVatPeriodEnd(e.target.value)} style={{ width: "100%", padding: 12, marginTop: 6 }} />
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div>
             <label>Description</label>
@@ -1014,7 +1053,11 @@ export default function ExpensesPage() {
                     <tr key={expense.id}>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.expense_date}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.supplier || "-"}</td>
-                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.description}</td>
+                      <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.description}
+                        {expense.category === "VAT" ? <div className={`mt-1 text-xs ${isValidVatPeriod(expense.vat_period_start, expense.vat_period_end) ? "text-slate-500" : "font-semibold text-amber-700"}`}>
+                          VAT period: {vatPeriodLabel(expense.vat_period_start, expense.vat_period_end)}
+                        </div> : null}
+                      </td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>{expense.category}</td>
                       <td style={{ borderBottom: "1px solid #f1f5f9", padding: 12 }}>
                         {account}

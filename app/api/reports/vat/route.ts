@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { loadIncomeExpenseReport, parseReportPeriod } from "@/src/lib/financial-report-server";
+import { parseReportPeriod } from "@/src/lib/financial-report-server";
 import { createClient } from "@/src/lib/supabase-server";
-import { buildVatReport } from "@/src/lib/vat-report";
+import { loadVatReport } from "@/src/lib/vat-report-server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +15,8 @@ export async function GET(request: Request) {
     }
 
     const period = parseReportPeriod(request);
-    const financialReport = await loadIncomeExpenseReport(supabase, period);
-    return NextResponse.json(buildVatReport(financialReport), {
+    const report = await loadVatReport(supabase, period);
+    return NextResponse.json(report, {
       headers: { "Cache-Control": "no-store, max-age=0" },
     });
   } catch (error) {

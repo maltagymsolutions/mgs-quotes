@@ -1,9 +1,9 @@
 import React from "react";
 import { NextResponse } from "next/server";
 import { renderToStream } from "@react-pdf/renderer";
-import { loadIncomeExpenseReport, parseReportPeriod } from "@/src/lib/financial-report-server";
+import { parseReportPeriod } from "@/src/lib/financial-report-server";
 import { createClient } from "@/src/lib/supabase-server";
-import { buildVatReport } from "@/src/lib/vat-report";
+import { loadVatReport } from "@/src/lib/vat-report-server";
 import VatReportPdf from "@/src/pdf/VatReportPdf";
 
 export const dynamic = "force-dynamic";
@@ -23,8 +23,7 @@ export async function GET(request: Request) {
     }
 
     const period = parseReportPeriod(request);
-    const financialReport = await loadIncomeExpenseReport(supabase, period);
-    const report = buildVatReport(financialReport);
+    const report = await loadVatReport(supabase, period);
     const element = React.createElement(VatReportPdf, { report }) as React.ReactElement<never>;
     const stream = await renderToStream(element);
 

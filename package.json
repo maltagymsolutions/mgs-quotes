@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:vat": "node --test tests/vat-report.test.cjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.4.0",

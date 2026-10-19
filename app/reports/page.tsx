@@ -1,5 +1,7 @@
 "use client";
 
+import { vatPeriodLabel } from "@/src/lib/vat-period";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -322,8 +324,22 @@ function VatReportView({ report }: { report: VatReport }) {
 
       <div className={`mb-5 rounded-lg border p-4 text-sm ${report.summary.vatPosition > 0 ? "border-red-200 bg-red-50 text-red-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
         <strong>{positionLabel}: {money(Math.abs(report.summary.vatPosition))}</strong>
-        <span className="ml-2">Output VAT less recoverable input VAT and recorded VAT payments.</span>
+        <span className="ml-2">Output VAT less recoverable input VAT and payments assigned to this VAT period, regardless of payment date.</span>
       </div>
+
+      {report.unassignedPaymentRows.length > 0 || report.partialPeriodPaymentRows.length > 0 ? (
+        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <strong>Some VAT payments have not been deducted.</strong>
+          {report.unassignedPaymentRows.length > 0 ? <p>{report.unassignedPaymentRows.length} payment(s) have no VAT period assigned. Edit each payment to assign its period.</p> : null}
+          {report.partialPeriodPaymentRows.length > 0 ? <p>{report.partialPeriodPaymentRows.length} payment(s) cover a period that only partly overlaps these report dates. Select the full VAT period to include them.</p> : null}
+          {[...report.unassignedPaymentRows, ...report.partialPeriodPaymentRows].map((row) => (
+            <div key={row.id} className="mt-2">
+              <a className="underline" href={`/expenses?expenseId=${encodeURIComponent(row.id)}`}>{row.description} — {money(row.amountInclVat)}</a>
+              <span> · Paid {row.date} · {vatPeriodLabel(row.vatPeriodStart, row.vatPeriodEnd)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {report.summary.dashboardHiddenExpenseCount > 0 ? (
         <div className="mb-5 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
@@ -349,8 +365,8 @@ function VatReportView({ report }: { report: VatReport }) {
       {report.paymentRows.length > 0 ? (
         <DetailTable
           title="VAT Payments"
-          headings={["Date", "Paid To", "Description", "Paid From", "Amount"]}
-          rows={report.paymentRows.map((row) => [row.date, row.supplier, row.description, row.paidFrom, money(row.amountInclVat)])}
+          headings={["Payment Date", "VAT Period", "Paid To", "Description", "Paid From", "Amount"]}
+          rows={report.paymentRows.map((row) => [row.date, vatPeriodLabel(row.vatPeriodStart, row.vatPeriodEnd), row.supplier, row.description, row.paidFrom, money(row.amountInclVat)])}
         />
       ) : null}
     </>
