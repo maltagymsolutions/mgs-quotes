@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
+import { InvoiceRefunds } from "@/src/components/invoice-refunds";
 import { isPartialDeposit } from "@/src/lib/deposits";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import {
@@ -223,6 +224,8 @@ export default function InvoiceDetailPage({ params }: PageProps) {
         </a>
     
       </div>
+
+      <InvoiceRefunds key={invoice.id} invoiceId={invoice.id} />
 
       <div
         className="document-page"

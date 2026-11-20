@@ -6,6 +6,7 @@ import { AppPage } from "@/src/components/app-page";
 import { buildCsv, downloadCsv } from "@/src/lib/csv";
 import { formatDisplayDate } from "@/src/lib/format-date";
 import { DEFAULT_OWNER, isOwner, Owner, OWNERS, resolveBankAccount } from "@/src/lib/owners";
+import { SALE_REFUND_FIELDS, saleRefundError, type SaleRefund } from "@/src/lib/sale-refunds";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Client = {
@@ -55,7 +56,7 @@ type ApsTransaction = {
   id: string;
   date: string;
   createdAt: string;
-  type: "Income" | "Expense" | "Transfer";
+  type: "Income" | "Expense" | "Transfer" | "Refund";
   counterparty: string;
   reference: string;
   description: string;
@@ -104,6 +105,7 @@ export default function ApsPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [receipts, setReceipts] = useState<PaymentReceipt[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [refunds, setRefunds] = useState<SaleRefund[]>([]);
   const [transfers, setTransfers] = useState<AccountTransfer[]>([]);
   const [transferDate, setTransferDate] = useState(todayIsoDate());
   const [transferDirection, setTransferDirection] = useState<"aps-to-owner" | "owner-to-aps">("aps-to-owner");
@@ -122,7 +124,7 @@ export default function ApsPage() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const loadData = useCallback(async function loadData() {
-    const [clientsResult, invoicesResult, receiptsResult, expensesResult, transfersResult] = await Promise.all([
+    const [clientsResult, invoicesResult, receiptsResult, expensesResult, transfersResult, refundsResult] = await Promise.all([
       supabase.from("clients").select("id, private_name, company_name"),
       supabase.from("invoices").select("id, invoice_number, client_id"),
       supabase
@@ -138,6 +140,7 @@ export default function ApsPage() {
         .select("*")
         .order("transfer_date", { ascending: false })
         .order("created_at", { ascending: false }),
+      supabase.from("sale_refunds").select(SALE_REFUND_FIELDS).eq("bank_account", "APS"),
     ]);
 
     const error = clientsResult.error || invoicesResult.error || receiptsResult.error || expensesResult.error;
@@ -152,7 +155,11 @@ export default function ApsPage() {
     setReceipts((receiptsResult.data || []) as PaymentReceipt[]);
     setExpenses((expensesResult.data || []) as Expense[]);
     setTransfers((transfersResult.data || []) as AccountTransfer[]);
-    setMessage(transfersResult.error ? TRANSFERS_SETUP_MESSAGE : "");
+    if (!refundsResult.error) setRefunds((refundsResult.data || []) as SaleRefund[]);
+    setMessage([
+      transfersResult.error ? TRANSFERS_SETUP_MESSAGE : "",
+      refundsResult.error ? saleRefundError(refundsResult.error) : "",
+    ].filter(Boolean).join(" "));
   }, [supabase]);
 
   useEffect(() => {
@@ -188,6 +195,24 @@ export default function ApsPage() {
           editHref: `/receipts?invoiceId=${encodeURIComponent(receipt.invoice_id)}&receiptType=${encodeURIComponent(receipt.receipt_type)}#receipt-editor`,
         });
       });
+
+    refunds.forEach((refund) => {
+      const invoice = invoiceById.get(refund.invoice_id);
+      const client = invoice?.client_id ? clientById.get(invoice.client_id) : null;
+
+      rows.push({
+        id: "refund-" + refund.id,
+        date: refund.refund_date,
+        createdAt: refund.created_at,
+        type: "Refund",
+        counterparty: client?.company_name || client?.private_name || "Customer",
+        reference: invoice?.invoice_number || refund.invoice_id,
+        description: "Reason: " + refund.reason,
+        category: "Sale refund",
+        amount: -Number(refund.amount),
+        editHref: "/invoices/" + encodeURIComponent(refund.invoice_id) + "#sale-refunds",
+      });
+    });
 
     expenses
       .filter((expense) => resolveBankAccount(expense.bank_account) === "APS")
@@ -245,7 +270,7 @@ export default function ApsPage() {
 
         return transactions;
       }, []);
-  }, [clientById, expenses, invoiceById, receipts, transfers]);
+  }, [clientById, expenses, invoiceById, receipts, refunds, transfers]);
 
   const filteredTransactions = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
@@ -423,7 +448,7 @@ export default function ApsPage() {
   return (
     <AppPage
       title="APS Account"
-      description="Review APS receipts, expenses, running balance, and filtered transaction totals."
+      description="Review APS transactions, running balance, and filtered totals."
       actions={
         <>
           <Link href="/receipts" className="inline-flex min-h-10 items-center rounded-md bg-white px-3 text-sm font-bold !text-slate-950 no-underline shadow-sm">
@@ -438,7 +463,7 @@ export default function ApsPage() {
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard label="Current APS balance" value={money(summary.balance)} />
         <SummaryCard label="Total APS income" value={money(summary.income)} />
-        <SummaryCard label="Total APS expenses" value={money(summary.expenses)} />
+        <SummaryCard label="Total APS outflows" value={money(summary.expenses)} />
         <SummaryCard label="Filtered net" value={money(summary.filteredNet)} />
       </div>
 
@@ -579,6 +604,7 @@ export default function ApsPage() {
               <option value="All">All types</option>
               <option value="Income">Income</option>
               <option value="Expense">Expense</option>
+              <option value="Refund">Refund</option>
               <option value="Transfer">Transfer</option>
             </select>
           </div>
@@ -652,7 +678,9 @@ export default function ApsPage() {
                       {transaction.type === "Transfer" ? (
                         <button type="button" disabled={savingTransfer} onClick={() => startEditingTransfer(transaction.reference)} aria-label={`Edit transfer with ${transaction.counterparty} on ${formatDisplayDate(transaction.date)}`} className="!rounded-md px-3 py-1.5 text-sm font-bold disabled:opacity-60">Edit</button>
                       ) : transaction.editHref ? (
-                        <Link href={transaction.editHref} className="whitespace-nowrap text-sm font-bold">{transaction.type === "Income" ? "Edit receipt" : "Edit expense"}</Link>
+                        <Link href={transaction.editHref} className="whitespace-nowrap text-sm font-bold">
+                          {transaction.type === "Refund" ? "View invoice" : transaction.type === "Income" ? "Edit receipt" : "Edit expense"}
+                        </Link>
                       ) : null}
                     </td>
                   </tr>

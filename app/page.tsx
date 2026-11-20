@@ -36,6 +36,7 @@ import {
   resolveOwnerSplit,
 } from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
+import { SALE_REFUND_FIELDS, saleRefundError, type SaleRefund } from "@/src/lib/sale-refunds";
 
 type Invoice = {
   id: string;
@@ -116,6 +117,7 @@ type BreakdownRow = {
 
 type OwnerCashTotals = {
   customerReceived: number;
+  customerRefunded: number;
   supplierPaid: number;
   splitReceived: number;
   splitPaid: number;
@@ -229,6 +231,7 @@ function isDateInRange(date: string, dateFrom: string, dateTo: string) {
 function emptyOwnerCashTotals(): OwnerCashTotals {
   return {
     customerReceived: 0,
+    customerRefunded: 0,
     supplierPaid: 0,
     splitReceived: 0,
     splitPaid: 0,
@@ -244,6 +247,7 @@ export default function HomePage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [paymentReceipts, setPaymentReceipts] = useState<PaymentReceipt[]>([]);
+  const [saleRefunds, setSaleRefunds] = useState<SaleRefund[]>([]);
   const [accountTransfers, setAccountTransfers] = useState<AccountTransfer[]>([]);
   const [dashboardMessage, setDashboardMessage] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -255,7 +259,7 @@ export default function HomePage() {
     setIsLoadingDashboard(true);
 
     try {
-      const [clientsResult, invoicesResult, invoiceItemsResult, expensesResult, receiptsResult, transfersResult] = await Promise.all([
+      const [clientsResult, invoicesResult, invoiceItemsResult, expensesResult, receiptsResult, transfersResult, refundsResult] = await Promise.all([
         supabase.from("clients").select("id, private_name, company_name"),
         supabase
           .from("invoices")
@@ -275,6 +279,7 @@ export default function HomePage() {
           .select("*")
           .order("transfer_date", { ascending: false })
           .order("created_at", { ascending: false }),
+        supabase.from("sale_refunds").select(SALE_REFUND_FIELDS).neq("bank_account", "APS"),
       ]);
 
       if (clientsResult.error) {
@@ -313,11 +318,14 @@ export default function HomePage() {
       setPaymentReceipts(receiptsResult.data || []);
       if (transfersResult.error) {
         setAccountTransfers([]);
-        setDashboardMessage(TRANSFERS_SETUP_MESSAGE);
       } else {
         setAccountTransfers((transfersResult.data || []) as AccountTransfer[]);
-        setDashboardMessage("");
       }
+      if (!refundsResult.error) setSaleRefunds((refundsResult.data || []) as SaleRefund[]);
+      setDashboardMessage([
+        transfersResult.error ? TRANSFERS_SETUP_MESSAGE : "",
+        refundsResult.error ? saleRefundError(refundsResult.error) : "",
+      ].filter(Boolean).join(" "));
       setLastUpdated(new Date().toLocaleString("en-MT", {
         day: "2-digit",
         month: "short",
@@ -591,6 +599,30 @@ export default function HomePage() {
       }
     });
 
+    saleRefunds
+      .filter((refund) => isDateInRange(refund.refund_date, dateFrom, dateTo))
+      .forEach((refund) => {
+        const owner = refund.bank_account;
+        if (!isOwner(owner)) return;
+        const amount = Number(refund.amount);
+        const invoice = invoiceById.get(refund.invoice_id);
+        const client = invoice?.client_id ? clientById.get(invoice.client_id) : null;
+        const totals = ownerTotals.get(owner) || emptyOwnerCashTotals();
+        totals.customerRefunded = round2(totals.customerRefunded + amount);
+        ownerTotals.set(owner, totals);
+        ownerTransactionRows.push({
+          date: refund.refund_date,
+          createdAt: refund.created_at,
+          owner,
+          type: "Customer refund",
+          counterparty: client?.company_name || client?.private_name || "Customer",
+          reference: invoice?.invoice_number || refund.invoice_id,
+          description: "Reason: " + refund.reason,
+          category: "Sale refund",
+          amount: -amount,
+        });
+      });
+
     accountTransfers
       .filter((transfer) => isDateInRange(transfer.transfer_date, dateFrom, dateTo))
       .forEach((transfer) => {
@@ -670,11 +702,12 @@ export default function HomePage() {
       ownerBalances: OWNERS.map((owner) => {
         const totals = ownerTotals.get(owner) || emptyOwnerCashTotals();
         const totalReceived = round2(totals.customerReceived + totals.splitReceived + totals.transferReceived);
-        const totalPaid = round2(totals.supplierPaid + totals.splitPaid + totals.transferPaid);
+        const totalPaid = round2(totals.supplierPaid + totals.splitPaid + totals.transferPaid + totals.customerRefunded);
 
         return {
           owner,
           customerReceived: totals.customerReceived,
+          customerRefunded: totals.customerRefunded,
           supplierPaid: totals.supplierPaid,
           splitReceived: totals.splitReceived,
           splitPaid: totals.splitPaid,
@@ -697,7 +730,7 @@ export default function HomePage() {
         expenses: monthlyExpenseTotals.get(month) || 0,
       })),
     };
-  }, [accountTransfers, clients, dateFrom, dateTo, expenses, invoiceItems, invoices, paymentReceipts]);
+  }, [accountTransfers, clients, dateFrom, dateTo, expenses, invoiceItems, invoices, paymentReceipts, saleRefunds]);
 
   function showAllDates() {
     setDateFrom("");
@@ -951,6 +984,7 @@ export default function HomePage() {
                       "Owner",
                       "Balance",
                       "Customer received",
+                      "Customer refunds",
                       "Supplier paid",
                       "Split received",
                       "Split paid",
@@ -984,6 +1018,9 @@ export default function HomePage() {
                       </td>
                       <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
                         {money(row.customerReceived)}
+                      </td>
+                      <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
+                        {money(row.customerRefunded)}
                       </td>
                       <td className="border-b border-slate-100 px-3 py-3 text-right tabular-nums text-slate-700">
                         {money(row.supplierPaid)}
