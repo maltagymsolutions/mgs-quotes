@@ -36,7 +36,7 @@ import {
   resolveOwnerSplit,
 } from "@/src/lib/owners";
 import { createClient } from "@/src/lib/supabase-browser";
-import { SALE_REFUND_FIELDS, saleRefundError, type SaleRefund } from "@/src/lib/sale-refunds";
+import { loadSaleRefunds, refundAmounts, type SaleRefund } from "@/src/lib/sale-refunds";
 
 type Invoice = {
   id: string;
@@ -279,7 +279,7 @@ export default function HomePage() {
           .select("*")
           .order("transfer_date", { ascending: false })
           .order("created_at", { ascending: false }),
-        supabase.from("sale_refunds").select(SALE_REFUND_FIELDS).neq("bank_account", "APS"),
+        loadSaleRefunds(supabase).then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
       ]);
 
       if (clientsResult.error) {
@@ -321,10 +321,10 @@ export default function HomePage() {
       } else {
         setAccountTransfers((transfersResult.data || []) as AccountTransfer[]);
       }
-      if (!refundsResult.error) setSaleRefunds((refundsResult.data || []) as SaleRefund[]);
+      if (refundsResult.data) setSaleRefunds(refundsResult.data);
       setDashboardMessage([
         transfersResult.error ? TRANSFERS_SETUP_MESSAGE : "",
-        refundsResult.error ? saleRefundError(refundsResult.error) : "",
+        refundsResult.error ? "Refunds could not be loaded. Totals may be incomplete. " + refundsResult.error.message : "",
       ].filter(Boolean).join(" "));
       setLastUpdated(new Date().toLocaleString("en-MT", {
         day: "2-digit",
@@ -430,6 +430,22 @@ export default function HomePage() {
         monthlyIncomeTotals.set(month, round2((monthlyIncomeTotals.get(month) || 0) + invoiceExclVat));
       }
     });
+
+    for (const refund of saleRefunds) {
+      const invoice = invoiceById.get(refund.invoice_id);
+      if (!invoice || invoice.status === "Archived") continue;
+      const amounts = refundAmounts(refund.amount, invoice.vat_rate, refund.credit_note_vat_amount);
+      if (isDateInRange(refund.refund_date, dateFrom, dateTo)) {
+        totalIncome = round2(totalIncome + amounts.amountInclVat);
+        totalIncomeExclVat = round2(totalIncomeExclVat + amounts.amountExclVat);
+        statusTotals.set("Sale refunds", round2((statusTotals.get("Sale refunds") || 0) + amounts.amountInclVat));
+        const month = refund.refund_date.slice(0, 7);
+        monthlyIncomeTotals.set(month, round2((monthlyIncomeTotals.get(month) || 0) + amounts.amountExclVat));
+      }
+      if (refund.credit_note_number && refund.credit_note_date && isDateInRange(refund.credit_note_date, dateFrom, dateTo)) {
+        incomeVat = round2(incomeVat + amounts.vatAmount);
+      }
+    }
 
     const expenseCategoryTotals = new Map<string, number>();
     const monthlyExpenseTotals = new Map<string, number>();
@@ -792,7 +808,7 @@ export default function HomePage() {
       amount: dashboard.totalIncomeExclVat,
       icon: TrendingUp,
       tone: "green" as const,
-      caption: "Invoice value before VAT",
+      caption: "Invoice sales less refunds, before VAT",
     },
     {
       label: "Expenses excl. VAT",
@@ -1058,8 +1074,8 @@ export default function HomePage() {
             ) : (
               <div className="grid gap-3">
                 {dashboard.monthlyBreakdown.map((row) => {
-                  const maxAmount = Math.max(row.income, row.expenses, 1);
-                  const incomeWidth = `${Math.max((row.income / maxAmount) * 100, row.income > 0 ? 8 : 0)}%`;
+                  const maxAmount = Math.max(Math.abs(row.income), row.expenses, 1);
+                  const incomeWidth = `${Math.max((Math.abs(row.income) / maxAmount) * 100, row.income !== 0 ? 8 : 0)}%`;
                   const expenseWidth = `${Math.max((row.expenses / maxAmount) * 100, row.expenses > 0 ? 8 : 0)}%`;
 
                   return (
@@ -1071,7 +1087,7 @@ export default function HomePage() {
                         </span>
                       </div>
                       <div className="grid gap-2">
-                        <BarRow label="Income" value={money(row.income)} width={incomeWidth} colorClass="bg-emerald-600" />
+                        <BarRow label="Income" value={money(row.income)} width={incomeWidth} colorClass={row.income < 0 ? "bg-red-600" : "bg-emerald-600"} />
                         <BarRow label="Expenses" value={money(row.expenses)} width={expenseWidth} colorClass="bg-red-600" />
                       </div>
                     </div>
@@ -1191,6 +1207,7 @@ function BarRow({ label, value, width, colorClass }: { label: string; value: str
 
 function BreakdownPanel({ title, rows }: { title: string; rows: BreakdownRow[] }) {
   const total = rows.reduce((sum, row) => sum + row.amount, 0);
+  const totalMagnitude = rows.reduce((sum, row) => sum + Math.abs(row.amount), 0);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -1203,7 +1220,7 @@ function BreakdownPanel({ title, rows }: { title: string; rows: BreakdownRow[] }
       ) : (
         <div className="grid gap-3">
           {rows.map((row) => {
-            const width = total > 0 ? `${Math.max((row.amount / total) * 100, 6)}%` : "0%";
+            const width = totalMagnitude > 0 && row.amount !== 0 ? `${Math.max((Math.abs(row.amount) / totalMagnitude) * 100, 6)}%` : "0%";
 
             return (
               <div key={row.label}>
@@ -1212,7 +1229,7 @@ function BreakdownPanel({ title, rows }: { title: string; rows: BreakdownRow[] }
                   <strong className="shrink-0 tabular-nums text-slate-950">{money(row.amount)}</strong>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-slate-900" style={{ width }} />
+                  <div className={"h-full rounded-full " + (row.amount < 0 ? "bg-red-600" : "bg-slate-900")} style={{ width }} />
                 </div>
               </div>
             );

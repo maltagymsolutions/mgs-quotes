@@ -96,7 +96,7 @@ function addSalesDetail(
       new Date(`${row.date}T00:00:00Z`),
       row.invoiceNumber,
       row.client,
-      row.status,
+      row.creditNoteNumber ? "Credit note " + row.creditNoteNumber : row.status,
       row.vatRate / 100,
       row.amountExclVat,
       row.vatAmount,
@@ -201,6 +201,18 @@ export async function buildVatReportWorkbook(report: VatReport) {
   addRateSheet(workbook, "Sales by VAT Rate", "Sales by VAT Rate", subtitle, report.salesByVatRate);
   addRateSheet(workbook, "Purchases by VAT Rate", "Purchases by VAT Rate", subtitle, report.purchasesByVatRate);
   addSalesDetail(workbook, subtitle, report.salesRows);
+  if (report.refundsAwaitingCreditNote.length > 0) {
+    const sheet = workbook.addWorksheet("Refunds to Review");
+    configureSheet(sheet, [17, 20, 31, 19]);
+    styleTitle(sheet, "Refunds Awaiting a Credit Note", subtitle, 4);
+    sheet.addRow(["Refund Date", "Invoice", "Client", "Amount"]);
+    styleHeader(sheet.getRow(3));
+    report.refundsAwaitingCreditNote.forEach((row) => {
+      sheet.addRow([new Date(row.date + "T00:00:00Z"), row.invoiceNumber, row.client, -row.amountInclVat]);
+    });
+    sheet.getColumn(1).numFmt = "dd/mm/yyyy";
+    styleBody(sheet, 4, sheet.rowCount, [4]);
+  }
   addPurchaseDetail(workbook, "Purchase Detail", "Purchase VAT Detail", subtitle, report.purchaseRows);
   if (report.paymentRows.length > 0) {
     addPaymentDetail(workbook, "VAT Payments", subtitle, report.paymentRows);

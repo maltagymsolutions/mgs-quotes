@@ -46,7 +46,7 @@ export default function IncomeExpenseReportPdf({ report }: { report: IncomeExpen
         <DataTable columns={summaryColumns} rows={summaryRows(report.incomeByStatus)} compact />
       </ReportPage>
 
-      {report.incomeRows.length > 0 ? <DetailPage report={report} name={name} title="Income detail" note={`${report.incomeRows.length} invoices • Most recent first • Amounts in EUR`} columns={incomeColumns}
+      {report.incomeRows.length > 0 ? <DetailPage report={report} name={name} title="Income detail" note="Invoices by issue date and refunds by refund date. Amounts in EUR." columns={incomeColumns}
         rows={report.incomeRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.invoiceNumber, row.client, { text: row.status, tone: row.status === "Fully Paid" ? "green" : row.status === "Deposit Paid" ? "amber" : "neutral" }, amount(row.amountExclVat), amount(row.amountInclVat)] }))}
         total={["Total", "", "", "", amount(summary.incomeExclVat), amount(summary.incomeInclVat)]} emptyLabel="No income records in this period."
       /> : null}

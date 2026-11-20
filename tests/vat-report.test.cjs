@@ -20,6 +20,8 @@ const { buildVatReport } = require('../src/lib/vat-report.ts');
 const { isValidVatPeriod, vatPaymentPeriodStatus } = require('../src/lib/vat-period.ts');
 const { loadVatPayments } = require('../src/lib/vat-report-server.ts');
 const { buildVatReportWorkbook } = require('../src/lib/vat-report-excel.ts');
+const { buildFinancialReportWorkbook } = require('../src/lib/financial-report-excel.ts');
+const { calculateShipmentProfit } = require('../src/lib/shipment-profit.ts');
 const ExcelJS = require('exceljs');
 const q2 = { from: '2026-04-01', to: '2026-06-30' };
 const q3 = { from: '2026-07-01', to: '2026-09-30' };
@@ -121,4 +123,68 @@ test('Excel totals and payment dates agree with the report; review sheets exclud
   assert.equal(sheet.getCell('B4').value.toISOString().slice(0, 10), q2.from);
   assert.equal(sheet.getCell('C4').value.toISOString().slice(0, 10), q2.to);
   assert.equal(workbook.getWorksheet('Unassigned Payments').getCell('B4').value, 'Unassigned');
+});
+
+const originalInvoice = {
+  id: 'sale', invoice_number: 'INV-1', client_id: 'customer', date_issued: '2026-06-30',
+  status: 'Fully Paid', vat_rate: 18, discount_amount_incl_vat: null,
+};
+const saleItems = [{ invoice_id: 'sale', qty: 1, sale_price_incl_vat: 1180 }];
+const refund = { id: 'refund', invoice_id: 'sale', amount: 118, refund_date: '2026-07-01' };
+const pendingRefund = { ...refund, id: 'pending', amount: 59 };
+const creditedRefund = {
+  ...refund, credit_note_number: 'CN-1', credit_note_date: '2026-10-01',
+  credit_note_vat_amount: 18,
+};
+
+function saleReport(period, refunds) {
+  return buildIncomeExpenseReport({
+    invoices: period === q2 || !period.from ? [originalInvoice] : [],
+    refundInvoices: [originalInvoice],
+    invoiceItems: saleItems,
+    clients: [{ id: 'customer', private_name: 'Test customer', company_name: null }],
+    expenses: [],
+    refunds,
+  }, period);
+}
+
+test('refunds reduce profit once on the recorded date, including earlier-period invoices', () => {
+  const july = saleReport(q3, [creditedRefund, pendingRefund]);
+  assert.equal(july.summary.incomeInclVat, -177);
+  assert.equal(july.summary.netExclVat, -150);
+  assert.deepEqual(july.monthly, [{ month: '2026-07', incomeExclVat: -150, expensesExclVat: 0, netExclVat: -150 }]);
+  assert.ok(july.incomeRows.every((row) => row.invoiceNumber === 'INV-1' && row.status === 'Sale refund'));
+  assert.equal(saleReport(q2, [creditedRefund, pendingRefund]).summary.netExclVat, 1000);
+  assert.equal(saleReport({ from: '', to: '' }, [creditedRefund, pendingRefund]).summary.netExclVat, 850);
+  assert.equal(calculateShipmentProfit([originalInvoice], saleItems, [], [creditedRefund, pendingRefund]).profit, 850);
+});
+
+test('VAT follows the issued credit note date and keeps unlinked refunds in review', () => {
+  const july = buildVatReport(saleReport(q3, [creditedRefund, pendingRefund]), []);
+  assert.equal(july.summary.outputVat, 0);
+  assert.deepEqual(july.refundsAwaitingCreditNote.map((row) => row.id), ['pending']);
+  const october = { from: '2026-10-01', to: '2026-10-31' };
+  const financialOctober = saleReport(october, [creditedRefund]);
+  assert.equal(financialOctober.incomeRows.length, 0);
+  const octoberVat = buildVatReport(financialOctober, []);
+  assert.equal(octoberVat.summary.outputVat, -18);
+  assert.equal(octoberVat.summary.taxableSales, -100);
+  assert.equal(octoberVat.salesRows[0].creditNoteNumber, 'CN-1');
+  assert.equal(octoberVat.salesRows[0].date, '2026-10-01');
+  assert.equal(octoberVat.salesByVatRate[0].vatAmount, -18);
+  const allTime = buildVatReport(saleReport({ from: '', to: '' }, [creditedRefund, pendingRefund]), []);
+  assert.equal(allTime.summary.outputVat, 162);
+});
+
+test('income and VAT Excel exports show the refund and actual credited amount', async () => {
+  const financial = saleReport({ from: '', to: '' }, [{ ...creditedRefund, credit_note_vat_amount: 17.99 }, pendingRefund]);
+  const income = new ExcelJS.Workbook();
+  await income.xlsx.load(await buildFinancialReportWorkbook(financial));
+  assert.equal(income.getWorksheet('Summary').getCell('B6').value, 849.99);
+  assert.equal(income.getWorksheet('Income Detail').getCell('D4').value, 'Sale refund');
+  const vat = new ExcelJS.Workbook();
+  await vat.xlsx.load(await buildVatReportWorkbook(buildVatReport(financial, [])));
+  assert.equal(vat.getWorksheet('VAT Summary').getCell('B5').value, 162.01);
+  assert.equal(vat.getWorksheet('Sales Detail').getCell('D4').value, 'Credit note CN-1');
+  assert.equal(vat.getWorksheet('Refunds to Review').getCell('D4').value, 59);
 });

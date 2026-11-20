@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadSaleRefunds } from "@/src/lib/sale-refunds";
 import {
   buildIncomeExpenseReport,
   type IncomeExpenseReport,
+  type FinancialReportSource,
   type ReportPeriod,
 } from "@/src/lib/financial-report";
 
@@ -54,19 +56,34 @@ export async function loadIncomeExpenseReport(
     expenseQuery = expenseQuery.lte("expense_date", period.to);
   }
 
-  const [invoiceResult, expenseResult] = await Promise.all([
+  const [invoiceResult, expenseResult, datedRefunds, datedCreditNotes] = await Promise.all([
     invoiceQuery,
     expenseQuery,
+    loadSaleRefunds(supabase, { ...period, dateColumn: "refund_date" }),
+    loadSaleRefunds(supabase, { ...period, dateColumn: "credit_note_date" }),
   ]);
 
   if (invoiceResult.error) throw new Error(invoiceResult.error.message);
   if (expenseResult.error) throw new Error(expenseResult.error.message);
 
   const invoices = invoiceResult.data || [];
-  const clientIds = Array.from(
-    new Set(invoices.map((invoice) => invoice.client_id).filter(Boolean))
-  ) as string[];
+  const refunds = Array.from(new Map(
+    [...datedRefunds, ...datedCreditNotes].map((refund) => [refund.id, refund])
+  ).values());
   const invoiceIds = invoices.map((invoice) => invoice.id);
+  const inPeriod = new Set(invoiceIds);
+  const otherIds = [...new Set(refunds.map((refund) => refund.invoice_id))].filter((id) => !inPeriod.has(id));
+  const refundInvoices: NonNullable<FinancialReportSource["refundInvoices"]> = [];
+  for (let offset = 0; offset < otherIds.length; offset += 100) {
+    const { data, error } = await supabase.from("invoices")
+      .select("id, invoice_number, client_id, vat_rate, status")
+      .in("id", otherIds.slice(offset, offset + 100));
+    if (error) throw new Error(error.message);
+    refundInvoices.push(...(data || []));
+  }
+  const clientIds = Array.from(
+    new Set([...invoices, ...refundInvoices].map((invoice) => invoice.client_id).filter(Boolean))
+  ) as string[];
 
   const [itemsResult, clientsResult] = await Promise.all([
     invoiceIds.length
@@ -89,6 +106,8 @@ export async function loadIncomeExpenseReport(
   return buildIncomeExpenseReport(
     {
       invoices,
+      refunds,
+      refundInvoices,
       invoiceItems: itemsResult.data || [],
       clients: clientsResult.data || [],
       expenses: expenseResult.data || [],

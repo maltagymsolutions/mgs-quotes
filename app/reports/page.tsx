@@ -165,8 +165,8 @@ export default function ReportsPage() {
             <h2 className="!mb-1">Report Period</h2>
             <p className="m-0 text-sm text-slate-500">
               {reportMode === "vat"
-                ? "Output VAT follows invoice issue dates. Recoverable VAT includes all expenses, even those hidden from dashboard calculations."
-                : "Income follows invoice issue dates. Expenses marked as hidden are listed separately and excluded from totals."}
+                ? "Sales VAT follows invoice issue dates and linked credit note issue dates. Recoverable VAT includes expenses hidden from the dashboard."
+                : "Sales follow invoice issue dates. Refunds reduce sales and profit on the refund date. Hidden expenses are listed separately."}
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
@@ -227,7 +227,7 @@ export default function ReportsPage() {
             <div>
               <h2 className="m-0 text-lg font-bold text-slate-950">{reportPeriodLabel(report.period)}</h2>
               <p className="mt-1 text-sm text-slate-500">
-                {report.incomeRows.length} invoice(s) and {report.expenseRows.length} included expense(s)
+                {report.incomeRows.length} sales entries and {report.expenseRows.length} included expenses
               </p>
             </div>
             <div className="flex gap-2 text-xs font-semibold text-slate-500">
@@ -306,7 +306,7 @@ function VatReportView({ report }: { report: VatReport }) {
         <div>
           <h2 className="m-0 text-lg font-bold text-slate-950">{reportPeriodLabel(report.period)}</h2>
           <p className="mt-1 text-sm text-slate-500">
-            {report.salesRows.length} sales invoice(s), {report.purchaseRows.length} purchase record(s), and {report.paymentRows.length} VAT payment(s)
+            {report.salesRows.length} sales entries, {report.purchaseRows.length} purchase records, and {report.paymentRows.length} VAT payments
           </p>
         </div>
         <div className="flex gap-2 text-xs font-semibold text-slate-500">
@@ -347,6 +347,14 @@ function VatReportView({ report }: { report: VatReport }) {
         </div>
       ) : null}
 
+      {report.refundsAwaitingCreditNote.length > 0 ? (
+        <DetailTable
+          title="Refunds awaiting a credit note"
+          headings={["Refund Date", "Invoice", "Client", "Refund Amount"]}
+          rows={report.refundsAwaitingCreditNote.map((row) => [row.date, row.invoiceNumber, row.client, money(-row.amountInclVat)])}
+        />
+      ) : null}
+
       <div className="mb-5 grid gap-4 xl:grid-cols-2">
         <VatRateBreakdown title="Sales by VAT Rate" rows={report.salesByVatRate} vatLabel="Output VAT" />
         <VatRateBreakdown title="Purchases by VAT Rate" rows={report.purchasesByVatRate} vatLabel="Input VAT" />
@@ -355,7 +363,7 @@ function VatReportView({ report }: { report: VatReport }) {
       <DetailTable
         title="Sales VAT Detail"
         headings={["Date", "Invoice", "Client", "Status", "VAT Rate", "Taxable Amount", "Output VAT", "Incl. VAT"]}
-        rows={report.salesRows.map((row) => [row.date, row.invoiceNumber, row.client, row.status, `${row.vatRate}%`, money(row.amountExclVat), money(row.vatAmount), money(row.amountInclVat)])}
+        rows={report.salesRows.map((row) => [row.date, row.invoiceNumber, row.client, row.creditNoteNumber ? "Credit note " + row.creditNoteNumber : row.status, `${row.vatRate}%`, money(row.amountExclVat), money(row.vatAmount), money(row.amountInclVat)])}
       />
       <DetailTable
         title="Purchase VAT Detail"

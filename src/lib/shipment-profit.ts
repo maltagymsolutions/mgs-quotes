@@ -1,4 +1,5 @@
 import { calculateItemsTotals, roundMoney } from "@/src/lib/item-discounts";
+import { refundAmounts, type SaleRefund } from "@/src/lib/sale-refunds";
 
 export type ShipmentInvoice = {
   id: string;
@@ -25,7 +26,8 @@ export function amountExcludingVat(amountInclVat: number, vatRate: number) {
 export function calculateShipmentProfit(
   invoices: ShipmentInvoice[],
   invoiceItems: ShipmentInvoiceItem[],
-  expenses: ShipmentExpense[]
+  expenses: ShipmentExpense[],
+  refunds: SaleRefund[] = []
 ) {
   const sales = invoices.reduce(
     (totals, invoice) => {
@@ -51,6 +53,16 @@ export function calculateShipmentProfit(
     },
     { revenueInclVat: 0, revenueExclVat: 0, salesVat: 0 }
   );
+
+  const invoiceById = new Map(invoices.map((invoice) => [invoice.id, invoice]));
+  for (const refund of refunds) {
+    const invoice = invoiceById.get(refund.invoice_id);
+    if (!invoice) continue;
+    const amounts = refundAmounts(refund.amount, invoice.vat_rate, refund.credit_note_vat_amount);
+    sales.revenueInclVat = roundMoney(sales.revenueInclVat + amounts.amountInclVat);
+    sales.revenueExclVat = roundMoney(sales.revenueExclVat + amounts.amountExclVat);
+    sales.salesVat = roundMoney(sales.salesVat + amounts.vatAmount);
+  }
 
   const costs = expenses.reduce(
     (totals, expense) => {

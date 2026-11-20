@@ -8,6 +8,7 @@ import {
   calculateShipmentProfit,
 } from "@/src/lib/shipment-profit";
 import { calculateItemsTotals } from "@/src/lib/item-discounts";
+import { loadSaleRefunds, type SaleRefund } from "@/src/lib/sale-refunds";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type ShipmentStatus = "Planning" | "Ordered" | "In transit" | "Received" | "Closed";
@@ -89,6 +90,7 @@ export default function ShipmentsPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [refunds, setRefunds] = useState<SaleRefund[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedShipmentId, setSelectedShipmentId] = useState("");
   const [editingShipmentId, setEditingShipmentId] = useState<string | null>(null);
@@ -108,6 +110,7 @@ export default function ShipmentsPage() {
       invoiceItemsResult,
       expensesResult,
       clientsResult,
+      refundsResult,
     ] = await Promise.all([
       supabase
         .from("shipments")
@@ -131,6 +134,7 @@ export default function ShipmentsPage() {
         .neq("category", "VAT")
         .order("expense_date", { ascending: false }),
       supabase.from("clients").select("id, private_name, company_name"),
+      loadSaleRefunds(supabase).then((data) => ({ data, error: null }), (error: Error) => ({ data: null, error })),
     ]);
 
     const setupError =
@@ -150,7 +154,8 @@ export default function ShipmentsPage() {
       invoicesResult.error ||
       invoiceItemsResult.error ||
       expensesResult.error ||
-      clientsResult.error;
+      clientsResult.error ||
+      refundsResult.error;
 
     if (error) {
       setMessage(error.message);
@@ -171,6 +176,7 @@ export default function ShipmentsPage() {
     setInvoices(nextInvoices);
     setInvoiceItems((invoiceItemsResult.data || []) as InvoiceItem[]);
     setExpenses(nextExpenses);
+    setRefunds(refundsResult.data || []);
     setClients((clientsResult.data || []) as Client[]);
     setSelectedShipmentId(nextSelectedShipmentId);
     setSelectedInvoiceIds(
@@ -210,8 +216,8 @@ export default function ShipmentsPage() {
   );
 
   const totals = useMemo(
-    () => calculateShipmentProfit(assignedInvoices, invoiceItems, assignedExpenses),
-    [assignedExpenses, assignedInvoices, invoiceItems]
+    () => calculateShipmentProfit(assignedInvoices, invoiceItems, assignedExpenses, refunds),
+    [assignedExpenses, assignedInvoices, invoiceItems, refunds]
   );
 
   function clientName(clientId: string | null) {

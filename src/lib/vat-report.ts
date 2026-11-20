@@ -33,6 +33,7 @@ export type VatReport = {
   salesByVatRate: VatRateBreakdownRow[];
   purchasesByVatRate: VatRateBreakdownRow[];
   salesRows: ReportIncomeRow[];
+  refundsAwaitingCreditNote: ReportIncomeRow[];
   purchaseRows: ReportExpenseRow[];
   paymentRows: ReportExpenseRow[];
   unassignedPaymentRows: ReportExpenseRow[];
@@ -95,17 +96,17 @@ export function buildVatReport(report: IncomeExpenseReport, payments: ReportExpe
   const vatPayments = round2(
     paymentRows.reduce((sum, row) => sum + row.amountInclVat, 0)
   );
-  const vatDueBeforePayments = round2(
-    report.summary.incomeVat - recoverableInputVat
-  );
+  const salesRows = report.vatSalesRows;
+  const outputVat = round2(salesRows.reduce((sum, row) => sum + row.vatAmount, 0));
+  const vatDueBeforePayments = round2(outputVat - recoverableInputVat);
 
   return {
     generatedAt: report.generatedAt,
     period: report.period,
     summary: {
-      taxableSales: report.summary.incomeExclVat,
-      outputVat: report.summary.incomeVat,
-      salesInclVat: report.summary.incomeInclVat,
+      taxableSales: round2(salesRows.reduce((sum, row) => sum + row.amountExclVat, 0)),
+      outputVat,
+      salesInclVat: round2(salesRows.reduce((sum, row) => sum + row.amountInclVat, 0)),
       taxablePurchases,
       recoverableInputVat,
       purchasesInclVat,
@@ -114,9 +115,10 @@ export function buildVatReport(report: IncomeExpenseReport, payments: ReportExpe
       vatPosition: round2(vatDueBeforePayments - vatPayments),
       dashboardHiddenExpenseCount: report.excludedExpenseRows.filter((row) => row.category !== "VAT").length,
     },
-    salesByVatRate: buildRateBreakdown(report.incomeRows),
+    salesByVatRate: buildRateBreakdown(salesRows),
     purchasesByVatRate: buildRateBreakdown(purchaseRows),
-    salesRows: report.incomeRows,
+    salesRows,
+    refundsAwaitingCreditNote: report.refundsAwaitingCreditNote,
     purchaseRows,
     paymentRows,
     unassignedPaymentRows,

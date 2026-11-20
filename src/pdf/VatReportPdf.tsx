@@ -48,8 +48,8 @@ export default function VatReportPdf({ report }: { report: VatReport }) {
       ]} total={["VAT position", amount(summary.vatPosition)]} />
     </ReportPage>
 
-    {report.salesRows.length > 0 || report.paymentRows.length > 0 || omittedPayments.length > 0 ? <DetailPage report={report} name={name} title="Sales VAT detail" note={`${report.salesRows.length} invoices • Most recent first • Amounts in EUR`} columns={salesColumns}
-      rows={report.salesRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.invoiceNumber, row.client, `${row.vatRate}%`, amount(row.amountExclVat), amount(row.vatAmount)] }))}
+    {report.salesRows.length > 0 || report.paymentRows.length > 0 || omittedPayments.length > 0 || report.refundsAwaitingCreditNote.length > 0 ? <DetailPage report={report} name={name} title="Sales VAT detail" note="Invoices and linked credit notes by issue date. Amounts in EUR." columns={salesColumns}
+      rows={report.salesRows.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.creditNoteNumber ? row.invoiceNumber + "\nCN " + row.creditNoteNumber : row.invoiceNumber, row.client, `${row.vatRate}%`, amount(row.amountExclVat), amount(row.vatAmount)] }))}
       total={["Total", "", "", "", amount(summary.taxableSales), amount(summary.outputVat)]} emptyLabel="No sales in this period.">
       <SectionHeading title="VAT payments" note="Payments deducted when calculating the VAT position." />
       <DataTable columns={[{ label: "Payment date", width: 18 }, { label: "VAT period", width: 28 }, { label: "Description", width: 36 }, { label: "Amount", width: 18, right: true }]}
@@ -59,6 +59,11 @@ export default function VatReportPdf({ report }: { report: VatReport }) {
         <SectionHeading title="Payment review — not deducted" note="Assign missing periods in Expenses. For partial overlaps, select the full VAT period." />
         <DataTable columns={[{ label: "Payment date", width: 18 }, { label: "VAT period", width: 28 }, { label: "Description", width: 36 }, { label: "Amount", width: 18, right: true }]}
           rows={omittedPayments.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), vatPeriodLabel(row.vatPeriodStart, row.vatPeriodEnd), row.description, amount(row.amountInclVat)] }))} />
+      </> : null}
+      {report.refundsAwaitingCreditNote.length > 0 ? <>
+        <SectionHeading title="Refunds awaiting a credit note" note="Review these refunds before finalising VAT totals." />
+        <DataTable columns={[{ label: "Refund date", width: 18 }, { label: "Invoice", width: 20 }, { label: "Client", width: 42 }, { label: "Amount", width: 20, right: true }]}
+          rows={report.refundsAwaitingCreditNote.map((row) => ({ key: row.id, cells: [formatDisplayDate(row.date), row.invoiceNumber, row.client, amount(-row.amountInclVat)] }))} />
       </> : null}
     </DetailPage> : null}
 

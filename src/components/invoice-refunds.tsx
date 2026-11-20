@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { formatDisplayDate } from "@/src/lib/format-date";
 import { BANK_ACCOUNTS, resolveBankAccount, type BankAccount } from "@/src/lib/owners";
 import { PAYMENT_RECEIPT_TYPE_LABELS, type PaymentReceiptType } from "@/src/lib/payment-receipts";
-import { SALE_REFUND_FIELDS, saleRefundError, toCents, type SaleRefund } from "@/src/lib/sale-refunds";
+import { REPORT_REFUND_FIELDS, refundAmounts, saleRefundError, toCents, type SaleRefund } from "@/src/lib/sale-refunds";
 import { createClient } from "@/src/lib/supabase-browser";
 
 type Receipt = {
@@ -24,7 +24,7 @@ function maltaToday() {
   return ["year", "month", "day"].map((part) => parts.find((p) => p.type === part)?.value).join("-");
 }
 
-export function InvoiceRefunds({ invoiceId }: { invoiceId: string }) {
+export function InvoiceRefunds({ invoiceId, invoiceDate, vatRate }: { invoiceId: string; invoiceDate: string; vatRate: number | string }) {
   const supabase = useMemo(() => createClient(), []);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [refunds, setRefunds] = useState<SaleRefund[]>([]);
@@ -39,6 +39,11 @@ export function InvoiceRefunds({ invoiceId }: { invoiceId: string }) {
   const [date, setDate] = useState(maltaToday);
   const [account, setAccount] = useState<BankAccount>("APS");
   const [reason, setReason] = useState("");
+  const [creditNoteRefund, setCreditNoteRefund] = useState<SaleRefund | null>(null);
+  const [creditNoteNumber, setCreditNoteNumber] = useState("");
+  const [creditNoteDate, setCreditNoteDate] = useState("");
+  const [creditNoteVat, setCreditNoteVat] = useState("");
+  const [creditNoteError, setCreditNoteError] = useState("");
   const pending = useRef(false);
   const requestId = useRef<string | null>(null);
 
@@ -48,7 +53,7 @@ export function InvoiceRefunds({ invoiceId }: { invoiceId: string }) {
       supabase.from("payment_receipts")
         .select("id, receipt_type, receipt_date, amount_paid, bank_account")
         .eq("invoice_id", invoiceId).order("receipt_date"),
-      supabase.from("sale_refunds").select(SALE_REFUND_FIELDS)
+      supabase.from("sale_refunds").select(REPORT_REFUND_FIELDS)
         .eq("invoice_id", invoiceId).order("refund_date", { ascending: false })
         .order("created_at", { ascending: false }),
     ]);
@@ -138,11 +143,55 @@ export function InvoiceRefunds({ invoiceId }: { invoiceId: string }) {
     }
   }
 
+  function editCreditNote(refund: SaleRefund) {
+    setEditing(false);
+    setFeedback("");
+    setCreditNoteError("");
+    setCreditNoteRefund(refund);
+    setCreditNoteNumber(refund.credit_note_number || "");
+    setCreditNoteDate(refund.credit_note_date || refund.refund_date);
+    const vat = refund.credit_note_vat_amount ?? Math.abs(refundAmounts(refund.amount, vatRate).vatAmount);
+    setCreditNoteVat(Number(vat).toFixed(2));
+  }
+
+  async function saveCreditNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending.current || !creditNoteRefund) return;
+    if (!creditNoteNumber.trim() || creditNoteDate < invoiceDate || creditNoteDate > today ||
+        !/^\d+(?:\.\d{1,2})?$/.test(creditNoteVat) || toCents(creditNoteVat) > toCents(creditNoteRefund.amount)) {
+      setCreditNoteError("Enter the credit note number, issue date, and VAT amount for this refund.");
+      return;
+    }
+    pending.current = true;
+    setSaving(true);
+    setCreditNoteError("");
+    try {
+      const { error } = await supabase.rpc("link_refund_credit_note", {
+        refund_id: creditNoteRefund.id,
+        note_number: creditNoteNumber.trim(),
+        issued_on: creditNoteDate,
+        credited_vat: toCents(creditNoteVat) / 100,
+      });
+      if (error) {
+        setCreditNoteError(saleRefundError(error));
+        return;
+      }
+      setCreditNoteRefund(null);
+      setFeedback("Credit note linked.");
+      await loadHistory();
+    } catch {
+      setCreditNoteError("Couldn’t confirm the save. Reload the refund history before retrying.");
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
+  }
+
   return (
     <section id="sale-refunds" aria-labelledby="sale-refunds-title" className="no-print mb-5 scroll-mt-5 rounded-lg border border-slate-200 bg-white p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="sale-refunds-title" className="m-0 text-lg font-bold text-slate-950">Sale refunds</h2>
-        {!loading && !loadError && !editing && available.length > 0 ? (
+        {!loading && !loadError && !editing && !creditNoteRefund && available.length > 0 ? (
           <button type="button" onClick={startRefund} className="min-h-10 !rounded-md !border-slate-900 !bg-slate-900 px-3 text-sm font-bold !text-white">
             Record refund
           </button>
@@ -203,12 +252,34 @@ export function InvoiceRefunds({ invoiceId }: { invoiceId: string }) {
           {saveError ? <p role="alert" className="mb-0 mt-3 text-sm text-red-700">{saveError}</p> : null}
         </form>
       ) : null}
+      {creditNoteRefund ? (
+        <form onSubmit={(event) => void saveCreditNote(event)} className="mt-4 border-t border-slate-200 pt-4">
+          <h3 className="m-0 text-base font-bold">Link an issued credit note</h3>
+          <p className="mt-2 text-sm text-slate-600">Enter the details for the {euro.format(Number(creditNoteRefund.amount))} refund. The VAT report uses the credit note’s issue date.</p>
+          <fieldset disabled={saving} className="m-0 grid min-w-0 gap-3 border-0 p-0 sm:grid-cols-3">
+            <label className="block text-sm">Credit note number
+              <input required maxLength={80} value={creditNoteNumber} onChange={(event) => setCreditNoteNumber(event.target.value)} className="mt-1 w-full px-3 py-2" />
+            </label>
+            <label className="block text-sm">Issue date
+              <input required type="date" min={invoiceDate} max={today} value={creditNoteDate} onChange={(event) => setCreditNoteDate(event.target.value)} className="mt-1 w-full px-3 py-2" />
+            </label>
+            <label className="block text-sm">VAT on this refund (€)
+              <input required type="number" min="0" max={Number(creditNoteRefund.amount)} step="0.01" value={creditNoteVat} onChange={(event) => setCreditNoteVat(event.target.value)} className="mt-1 w-full px-3 py-2" />
+            </label>
+            <div className="flex flex-wrap gap-2 sm:col-span-3">
+              <button type="submit" className="min-h-10 !rounded-md !border-slate-900 !bg-slate-900 px-3 text-sm font-bold !text-white">{saving ? "Saving…" : "Save credit note link"}</button>
+              <button type="button" onClick={() => setCreditNoteRefund(null)} className="min-h-10 px-3 text-sm font-bold">Cancel</button>
+            </div>
+          </fieldset>
+          {creditNoteError ? <p role="alert" className="mb-0 mt-3 text-sm text-red-700">{creditNoteError}</p> : null}
+        </form>
+      ) : null}
       {!loading && !loadError && refunds.length > 0 ? (
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[520px] border-collapse text-sm">
             <caption className="sr-only">Refund history</caption>
             <thead className="bg-slate-50 text-left">
-              <tr>{["Date", "Original payment", "Paid from", "Amount", "Reason"].map((label) => <th key={label} scope="col" className="px-3 py-2">{label}</th>)}</tr>
+              <tr>{["Date", "Original payment", "Paid from", "Amount", "Reason", "Credit note"].map((label) => <th key={label} scope="col" className="px-3 py-2">{label}</th>)}</tr>
             </thead>
             <tbody>
               {refunds.map((refund) => {
@@ -220,6 +291,12 @@ export function InvoiceRefunds({ invoiceId }: { invoiceId: string }) {
                     <td className="px-3 py-2">{refund.bank_account}</td>
                     <td className="whitespace-nowrap px-3 py-2">{euro.format(Number(refund.amount))}</td>
                     <td className="break-words px-3 py-2">{refund.reason}</td>
+                    <td className="px-3 py-2">
+                      {refund.credit_note_number ? <div>{refund.credit_note_number} · {formatDisplayDate(refund.credit_note_date)}</div> : null}
+                      <button type="button" disabled={saving || editing} onClick={() => editCreditNote(refund)} className="whitespace-nowrap text-xs font-bold">
+                        {refund.credit_note_number ? "Edit credit note link" : "Link credit note"}
+                      </button>
+                    </td>
                   </tr>
                 );
               })}

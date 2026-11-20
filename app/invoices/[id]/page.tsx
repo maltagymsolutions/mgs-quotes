@@ -225,7 +225,7 @@ export default function InvoiceDetailPage({ params }: PageProps) {
     
       </div>
 
-      <InvoiceRefunds key={invoice.id} invoiceId={invoice.id} />
+      <InvoiceRefunds key={invoice.id} invoiceId={invoice.id} invoiceDate={invoice.date_issued} vatRate={invoice.vat_rate} />
 
       <div
         className="document-page"

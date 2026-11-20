@@ -1,5 +1,6 @@
 import { calculateItemsTotals } from "@/src/lib/item-discounts";
 import { resolveBankAccount } from "@/src/lib/owners";
+import { refundAmounts, type SaleRefund } from "@/src/lib/sale-refunds";
 
 export type ReportPeriod = {
   from: string;
@@ -20,6 +21,7 @@ export type ReportIncomeRow = {
   invoiceNumber: string;
   client: string;
   status: string;
+  creditNoteNumber?: string;
   vatRate: number;
   amountExclVat: number;
   vatAmount: number;
@@ -68,6 +70,8 @@ export type IncomeExpenseReport = {
   expensesBySupplier: ReportBreakdownRow[];
   monthly: MonthlyReportRow[];
   incomeRows: ReportIncomeRow[];
+  vatSalesRows: ReportIncomeRow[];
+  refundsAwaitingCreditNote: ReportIncomeRow[];
   expenseRows: ReportExpenseRow[];
   excludedExpenseRows: ReportExpenseRow[];
 };
@@ -82,6 +86,8 @@ export type FinancialReportSource = {
     vat_rate: number | string;
     discount_amount_incl_vat: number | string | null;
   }[];
+  refunds?: SaleRefund[];
+  refundInvoices?: Pick<FinancialReportSource["invoices"][number], "id" | "client_id" | "invoice_number" | "vat_rate" | "status">[];
   invoiceItems: {
     invoice_id: string;
     qty: number | string;
@@ -193,7 +199,7 @@ export function buildIncomeExpenseReport(
   const monthlyIncome = new Map<string, number>();
   const monthlyExpenses = new Map<string, number>();
 
-  const incomeRows = source.invoices
+  const invoiceRows = source.invoices
     .filter((invoice) => invoice.status !== "Archived")
     .map((invoice): ReportIncomeRow => {
       const itemTotal = calculateItemsTotals(itemsByInvoice.get(invoice.id) || [])
@@ -234,8 +240,49 @@ export function buildIncomeExpenseReport(
         vatAmount: calculated.vatAmount,
         amountInclVat,
       };
-    })
-    .sort((a, b) => b.date.localeCompare(a.date) || a.invoiceNumber.localeCompare(b.invoiceNumber));
+    });
+
+  const invoiceById = new Map(
+    [...source.invoices, ...(source.refundInvoices || [])].map((invoice) => [invoice.id, invoice])
+  );
+  const dateInPeriod = (date: string) =>
+    (!period.from || date >= period.from) && (!period.to || date <= period.to);
+  const refundRows: ReportIncomeRow[] = [];
+  const creditNoteRows: ReportIncomeRow[] = [];
+  const refundsAwaitingCreditNote: ReportIncomeRow[] = [];
+  for (const refund of source.refunds || []) {
+    const invoice = invoiceById.get(refund.invoice_id);
+    if (!invoice) throw new Error("Could not load the invoice for a sale refund.");
+    if (invoice.status === "Archived") continue;
+    const client = invoice.client_id ? clientById.get(invoice.client_id) : null;
+    const vatRate = Number(invoice.vat_rate || 0);
+    const row: ReportIncomeRow = {
+      id: refund.id,
+      date: refund.refund_date,
+      invoiceNumber: invoice.invoice_number,
+      client: client?.company_name || client?.private_name || "Client",
+      status: "Sale refund",
+      vatRate,
+      ...refundAmounts(refund.amount, vatRate, refund.credit_note_vat_amount),
+    };
+    if (dateInPeriod(refund.refund_date)) {
+      refundRows.push(row);
+      addBreakdownValue(incomeByStatus, row.status, row.amountExclVat, row.vatAmount, row.amountInclVat);
+      const month = row.date.slice(0, 7);
+      monthlyIncome.set(month, round2((monthlyIncome.get(month) || 0) + row.amountExclVat));
+      if (!refund.credit_note_number || !refund.credit_note_date) refundsAwaitingCreditNote.push(row);
+    }
+    if (refund.credit_note_number && refund.credit_note_date && dateInPeriod(refund.credit_note_date)) {
+      creditNoteRows.push({
+        ...row, date: refund.credit_note_date,
+        status: "Credit note", creditNoteNumber: refund.credit_note_number,
+      });
+    }
+  }
+  const byDate = (a: ReportIncomeRow, b: ReportIncomeRow) =>
+    b.date.localeCompare(a.date) || a.invoiceNumber.localeCompare(b.invoiceNumber) || a.id.localeCompare(b.id);
+  const incomeRows = [...invoiceRows, ...refundRows].sort(byDate);
+  const vatSalesRows = [...invoiceRows, ...creditNoteRows].sort(byDate);
 
   const includedExpenseRows: ReportExpenseRow[] = [];
   const excludedExpenseRows: ReportExpenseRow[] = [];
@@ -336,6 +383,8 @@ export function buildIncomeExpenseReport(
       };
     }),
     incomeRows,
+    vatSalesRows,
+    refundsAwaitingCreditNote: refundsAwaitingCreditNote.sort(byDate),
     expenseRows: includedExpenseRows,
     excludedExpenseRows,
   };
