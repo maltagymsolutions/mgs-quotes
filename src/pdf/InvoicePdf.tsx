@@ -192,6 +192,7 @@ export default function InvoicePdf({ invoice, client, items, companySettings }: 
                 style={{ width: 120, height: 52, marginBottom: 6, alignSelf: "flex-start" }}
               />
               <Text>{companyVatNumber}</Text>
+              <Text>{"184, Triq il-Kbira\nBirkirkara, BKR2104, Malta"}</Text>
               <Text>Phone: +356 7954 9541</Text>
               <Text>@maltagymsolutions</Text>
               <Text>maltagymsolutions.com</Text>
